@@ -1,0 +1,1500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ config.instance_name or 'Zero-Fi' }} — Settings</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='zerofi.css') }}">
+  <style>
+    /* Full palette + derived tokens — computed in app.py from bg luma */
+    :root {
+      {% for k, v in palette_vars.items() %}{{ k }}: {{ v }};
+      {% endfor %}
+    }
+  </style>
+  <style>
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+      position: relative;
+      min-height: 100vh;
+    }
+
+    /* ── Prism-fan hero: conic gradient from lower-left corner ──────── */
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 400px;
+      background: conic-gradient(from 0deg at 0% 100%,
+        var(--c1) 0deg 20deg, var(--c2) 20deg 40deg, var(--c3) 40deg 60deg, var(--c4) 60deg 80deg);
+      clip-path: polygon(0 0, 100% 0, 100% 18%, 0 100%);
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ── Subtle repeating motif on the bg (c2-on-bg texture) ─────── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.06;
+      background-image:
+        radial-gradient(ellipse 4px 8px at 0 0, var(--c2) 55%, transparent 100%),
+        radial-gradient(ellipse 8px 4px at 50% 50%, var(--c2) 40%, transparent 100%);
+      background-size: 30px 30px;
+      background-position: 15px 8px, 0 0;
+    }
+
+    /* ── Page layout ─────────────────────────────────────────────── */
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: 640px;
+      margin: 0 auto;
+      padding: var(--s6);
+    }
+
+    /* ── Brand hero mark — sits over the stripe, no chip bg ──────── */
+    .page-hero-mark {
+      padding: var(--s6) 0 var(--s5);
+      padding-left: 12px;
+      overflow: hidden;
+    }
+    .page-hero-mark .brand-mark {
+      font-size: 60px;
+      color: var(--c1);
+      -webkit-text-stroke: 8px var(--c4);
+      paint-order: stroke fill;
+      padding: 0;
+      border-radius: 0;
+      background: none;
+      cursor: pointer;
+      line-height: 1.05;
+      white-space: nowrap;
+      display: inline-block;
+    }
+    .page-hero-mark .brand-mark:hover { opacity: 0.85; }
+
+    /* ── Flash ───────────────────────────────────────────────────── */
+    #flash { margin-bottom: var(--s4); }
+    .card-flash { margin-top: var(--s3); }
+
+    /* ── Section grouping ────────────────────────────────────────── */
+    .section { margin-bottom: var(--s6); }
+    .section-label {
+      font-family: var(--font-brand);
+      font-size: 30px;
+      line-height: 1.1;
+      color: var(--c1);
+      -webkit-text-stroke: 3px var(--bg);
+      paint-order: stroke fill;
+      padding-bottom: var(--s2);
+      border-bottom: 1px solid var(--border-hi);
+      margin-bottom: var(--s3);
+    }
+
+    /* ── Card ────────────────────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: var(--s5);
+      margin-bottom: var(--s3);
+      position: relative;
+      transition: border-color 0.18s;
+    }
+    .card.dirty { border-color: var(--border-dirty); }
+    .card + .card { /* consecutive cards in a section — tighten gap */ }
+
+    /* ── Card spinner overlay ────────────────────────────────────── */
+    .card-spinner-overlay {
+      position: absolute; inset: 0;
+      background: rgba(23,19,16,0.72);
+      display: none;
+      align-items: center; justify-content: center;
+      border-radius: var(--r);
+      z-index: 5;
+    }
+    .card.saving .card-spinner-overlay { display: flex; }
+
+    /* ── Card header ─────────────────────────────────────────────── */
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s3);
+      margin-bottom: var(--s4);
+    }
+    .card-header h2 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.01em;
+      line-height: 1;
+    }
+    .card-actions { display: none; gap: var(--s2); align-items: center; }
+    .card.dirty:not(.saving) .card-actions { display: flex; }
+    .card-save  { background: var(--interactive); color: var(--interactive-text); }
+    .card-revert { background: transparent; color: var(--text-2); border-color: var(--border); }
+
+    /* ── Form fields ─────────────────────────────────────────────── */
+    .field { margin-top: var(--s4); }
+    .field:first-of-type { margin-top: 0; }
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: var(--s1);
+    }
+    .field-hint {
+      display: block;
+      font-size: 12px;
+      color: var(--text-3);
+      margin-top: var(--s2);
+      line-height: 1.55;
+    }
+
+    /* ── Checkbox row ────────────────────────────────────────────── */
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: var(--s2);
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-2);
+      cursor: pointer;
+      padding: var(--s2) 0;
+      text-transform: none;
+      letter-spacing: normal;
+      margin-bottom: 0;
+    }
+    .check-row input[type="checkbox"] { width: 18px; min-width: 18px; margin: 0; }
+
+    /* ── Status strip (wifi connected, etc.) ─────────────────────── */
+    .status-strip {
+      padding: var(--s2) var(--s3);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      font-size: 12px;
+      color: var(--text-2);
+      margin-bottom: var(--s4);
+      display: none;
+    }
+    .status-strip.visible { display: block; }
+    .status-strip .ok { color: var(--c1); font-weight: 600; }
+
+    /* ── Queue summary ───────────────────────────────────────────── */
+    .queue-strip {
+      display: flex;
+      align-items: center;
+      gap: var(--s2);
+      padding: var(--s2) var(--s3);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      font-size: 12px;
+      color: var(--text-3);
+      margin-bottom: var(--s4);
+      font-variant-numeric: tabular-nums;
+    }
+    .queue-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--border-hi);
+      flex-shrink: 0;
+    }
+    .queue-dot.active { background: var(--c3); }
+
+    /* ── Action row (test/sync buttons) ──────────────────────────── */
+    .action-row {
+      display: flex;
+      gap: var(--s2);
+      margin-top: var(--s4);
+    }
+    .action-row .btn { flex: 1; }
+    .action-result {
+      margin-top: var(--s3);
+      font-size: 12px;
+      min-height: 16px;
+    }
+
+    /* ── BT mode radio buttons ───────────────────────────────────── */
+    .bt-radios {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s2);
+      margin-bottom: var(--s3);
+    }
+    .bt-radio-row {
+      display: flex;
+      align-items: center;
+      gap: var(--s2);
+      font-size: 13px;
+      color: var(--text-2);
+      cursor: pointer;
+      padding: var(--s2) var(--s3);
+      border-radius: var(--r-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      transition: background 0.12s, border-color 0.12s;
+      text-transform: none;
+      letter-spacing: normal;
+      font-weight: 400;
+      margin-bottom: 0;
+    }
+    .bt-radio-row:hover { background: var(--card); }
+    .bt-radio-row input[type="radio"] { width: 15px; min-width: 15px; margin: 0; accent-color: var(--interactive); }
+    .bt-radio-row:has(input:checked) {
+      background: var(--card);
+      color: var(--text);
+      font-weight: 500;
+      border-color: var(--border-hi);
+    }
+
+    /* ── BT rows ─────────────────────────────────────────────────── */
+    .bt-row {
+      display: flex;
+      align-items: center;
+      gap: var(--s2);
+      padding: var(--s2) 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .bt-row:last-child { border-bottom: none; }
+    .bt-row-name { flex: 1; font-size: 13px; color: var(--text); }
+    .bt-row-role { font-size: 11px; color: var(--text-3); margin-left: 4px; }
+
+    /* ── Bottom utility row ──────────────────────────────────────── */
+    .utility-row {
+      display: flex;
+      gap: var(--s2);
+    }
+    .utility-row .btn { flex: 1; font-size: 12px; text-decoration: none; }
+
+    /* Factory reset: not red-alarm, just the darkest palette tone with firm border */
+    .btn-destructive {
+      background: transparent;
+      color: var(--c1);
+      border: 1.5px solid var(--c1);
+      opacity: 0.85;
+    }
+    .btn-destructive:hover { background: var(--c1); color: var(--c4); opacity: 1; }
+
+    /* ── Test result ─────────────────────────────────────────────── */
+    .test-ok  { color: var(--success); }
+    .test-err { color: var(--danger-text); }
+
+    /* ── Palette picker ──────────────────────────────────────────── */
+    .palette-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
+      gap: var(--s3) var(--s2);
+      margin-bottom: var(--s2);
+    }
+    .palette-swatch-btn {
+      background: none; border: none; cursor: pointer;
+      padding: var(--s1); border-radius: var(--r);
+      display: flex; flex-direction: column; align-items: center;
+      gap: var(--s1); transition: background 0.12s;
+    }
+    .palette-swatch-btn:hover { background: var(--interactive-dim); }
+    .palette-swatch-btn.active { background: var(--interactive-dim); }
+    .swatch-sq {
+      width: 58px; height: 58px; border-radius: var(--r);
+      background-color: var(--sw-bg);
+      position: relative; overflow: hidden;
+      border: 2px solid var(--border);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .palette-swatch-btn.active .swatch-sq {
+      border-color: var(--c2);
+      box-shadow: 0 0 0 2px var(--c2);
+    }
+    .swatch-sq::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(166deg,
+        var(--sw-c1) 26% 38%, var(--sw-c2) 38% 50%,
+        var(--sw-c3) 50% 62%, var(--sw-c4) 62% 74%);
+      clip-path: polygon(0 32%, 100% 8%, 100% 68%, 0 92%);
+    }
+    .swatch-name {
+      font-size: 10px; color: var(--text-3); text-align: center;
+      line-height: 1.2; max-width: 62px; word-break: break-word;
+    }
+    .palette-swatch-btn.active .swatch-name { color: var(--text-2); }
+    .swatch-sub { display: block; font-size: 9px; opacity: 0.55; margin-top: 1px; }
+
+    /* Custom/Indie color editor */
+    .custom-palette-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+      gap: var(--s3);
+      margin-top: var(--s4);
+      padding-top: var(--s4);
+      border-top: 1px solid var(--border);
+    }
+    .color-slot { display: flex; flex-direction: column; gap: var(--s1); }
+    .color-slot label {
+      font-size: 10px; color: var(--text-3); letter-spacing: 0.04em;
+      text-transform: uppercase; margin-bottom: 0;
+    }
+    .color-input-row { display: flex; gap: var(--s1); align-items: center; }
+    input[type="color"] {
+      width: 30px !important; height: 30px; min-width: 30px;
+      padding: 2px; border: 1px solid var(--border); border-radius: var(--r-sm);
+      cursor: pointer; background: var(--surface); flex-shrink: 0;
+    }
+    .color-hex-input {
+      flex: 1; min-width: 0;
+      font-family: var(--font-mono); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.02em;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <div class="page-hero-mark">
+    <span class="brand-mark" onclick="scrollToInstanceName()" title="Click to edit name">{{ config.instance_name }}</span>
+  </div>
+
+  <div id="flash" class="flash"></div>
+
+  <!-- ── Identity ─────────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-label">Identity</div>
+
+    <div class="card" id="card-instance-name">
+      <div class="card-spinner-overlay"><div class="spinner"></div></div>
+      <div class="card-header">
+        <div class="card-actions">
+          <button class="btn btn-sm btn-secondary card-revert">&#8634; Revert</button>
+          <button class="btn btn-sm btn-primary card-save">Save</button>
+        </div>
+      </div>
+      <label for="instance-name" style="font-size:0.8rem; color:var(--text-3); display:block; margin-bottom:var(--s2);">Name your band…</label>
+      <div style="display:flex; gap:var(--s2); align-items:center;">
+        <input id="instance-name" value="{{ config.instance_name }}"
+               title="Sets AP name, AirPlay receiver, Bluetooth alias, hostname, and DHCP ID"
+               style="flex:1; min-width:0;">
+        <button class="btn btn-sm btn-secondary" onclick="generateBandName()" title="Generate a random band name" style="flex-shrink:0; white-space:nowrap;">&#127922; Generate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Appearance ────────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-label">Appearance</div>
+
+    <div class="card" id="card-palette">
+      <div class="card-spinner-overlay"><div class="spinner"></div></div>
+      <div class="card-header">
+        <h2>Color Palette</h2>
+        <div class="card-actions" id="palette-actions" style="display:none;">
+          <button class="btn btn-sm btn-secondary" onclick="revertPalette()">&#8634; Revert</button>
+          <button class="btn btn-sm btn-primary" onclick="savePalette()">Save</button>
+        </div>
+      </div>
+      <div class="palette-grid" id="palette-grid">
+        <!-- populated by JS -->
+      </div>
+      <div id="indie-editor" style="display:none;">
+        <div class="custom-palette-grid">
+          <div class="color-slot">
+            <label>Background</label>
+            <div class="color-input-row">
+              <input type="color" id="cp-bg">
+              <input type="text" id="cp-bg-hex" class="color-hex-input" maxlength="7" placeholder="#000000">
+            </div>
+          </div>
+          <div class="color-slot">
+            <label>Color 1</label>
+            <div class="color-input-row">
+              <input type="color" id="cp-c1">
+              <input type="text" id="cp-c1-hex" class="color-hex-input" maxlength="7" placeholder="#000000">
+            </div>
+          </div>
+          <div class="color-slot">
+            <label>Color 2</label>
+            <div class="color-input-row">
+              <input type="color" id="cp-c2">
+              <input type="text" id="cp-c2-hex" class="color-hex-input" maxlength="7" placeholder="#000000">
+            </div>
+          </div>
+          <div class="color-slot">
+            <label>Color 3</label>
+            <div class="color-input-row">
+              <input type="color" id="cp-c3">
+              <input type="text" id="cp-c3-hex" class="color-hex-input" maxlength="7" placeholder="#000000">
+            </div>
+          </div>
+          <div class="color-slot">
+            <label>Color 4</label>
+            <div class="color-input-row">
+              <input type="color" id="cp-c4">
+              <input type="text" id="cp-c4-hex" class="color-hex-input" maxlength="7" placeholder="#000000">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Network ───────────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-label">Network</div>
+
+    <div class="card" id="card-features">
+      <div class="card-spinner-overlay"><div class="spinner"></div></div>
+      <div class="card-header">
+        <h2>WiFi Speaker Sharing</h2>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-secondary card-revert">&#8634; Revert</button>
+          <button class="btn btn-sm btn-primary card-save">Save</button>
+        </div>
+      </div>
+      <label class="check-row">
+        <input type="checkbox" id="airplay-enabled" {% if config.airplay_enabled %}checked{% endif %}
+               title="Name shown to other devices follows Instance Name">
+        AirPlay receiver
+      </label>
+    </div>
+
+    <div class="card" id="card-ap">
+      <div class="card-spinner-overlay"><div class="spinner"></div></div>
+      <div class="card-header">
+        <h2>Access Point</h2>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-secondary card-revert">&#8634; Revert</button>
+          <button class="btn btn-sm btn-primary card-save">Save</button>
+        </div>
+      </div>
+      <label class="check-row">
+        <input type="checkbox" id="ap-enabled" {% if config.ap_enabled %}checked{% endif %}>
+        Enabled
+      </label>
+      <div class="field">
+        <label for="ap-password">Password</label>
+        <input id="ap-password" value="{{ config.ap_password }}" type="password"
+               placeholder="Leave blank for open AP">
+        <span class="field-hint">WPA2 requires at least 8 characters</span>
+      </div>
+    </div>
+
+    <div class="card" id="card-wifi">
+      <div class="card-spinner-overlay"><div class="spinner"></div></div>
+      <div class="card-header">
+        <h2>Home WiFi</h2>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-secondary card-revert">&#8634; Revert</button>
+          <button class="btn btn-sm btn-primary card-save">Save</button>
+        </div>
+      </div>
+      <div id="wifi-status" class="status-strip"></div>
+      <label class="check-row">
+        <input type="checkbox" id="wifi-client-enabled" {% if config.wifi_client_enabled %}checked{% endif %}>
+        Enabled
+      </label>
+      <div class="field">
+        <label for="wifi-ssid">SSID</label>
+        <input id="wifi-ssid" value="{{ config.wifi_client_ssid }}">
+      </div>
+      <div class="field">
+        <label for="wifi-password">Password</label>
+        <input id="wifi-password" value="{{ config.wifi_client_password }}" type="password">
+      </div>
+      <div class="field">
+        <label for="log-export">Log export</label>
+        <input id="log-export" value="{{ config.log_export }}" placeholder="192.168.1.50:514"
+               title="Optional syslog UDP target (host:port)"></div>
+    </div>
+  </div>
+
+  <!-- ── Time ──────────────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-label">Time</div>
+
+    <div class="card" id="card-time">
+      <div class="card-spinner-overlay"><div class="spinner"></div></div>
+      <div class="card-header">
+        <h2>Date &amp; Time</h2>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-secondary card-revert">&#8634; Revert</button>
+          <button class="btn btn-sm btn-primary card-save">Save</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="timezone">Timezone</label>
+        <select id="timezone" title="Library sync runs 2–5am local time">
+          {% for tz in timezones %}
+          <option value="{{ tz }}" {% if tz == config.timezone %}selected{% endif %}>{{ tz }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <label class="check-row" style="margin-top: var(--s4);"
+             title="Syncs time automatically when home WiFi is connected">
+        <input type="checkbox" id="ntp-enabled" {% if config.get('ntp_enabled', True) %}checked{% endif %}>
+        Sync time over the internet
+      </label>
+      <div class="field" style="margin-top: var(--s4);">
+        <label for="manual-datetime">Set manually</label>
+        <div style="display:flex; gap: var(--s2);">
+          <input id="manual-datetime" type="datetime-local" value="{{ current_datetime }}"
+                 title="Only needed when no network is available — an NTP sync overrides this">
+          <button class="btn btn-secondary btn-sm" onclick="setDatetime(this)"
+                  style="white-space:nowrap; flex-shrink:0;">Set</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Library ────────────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-label">Library</div>
+
+    <div class="card" id="card-sync">
+      <div class="card-spinner-overlay"><div class="spinner"></div></div>
+      <div class="card-header">
+        <h2>Sync</h2>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-secondary card-revert">&#8634; Revert</button>
+          <button class="btn btn-sm btn-primary card-save">Save</button>
+        </div>
+      </div>
+
+      <div class="queue-strip" id="sync-queue-summary">
+        <span class="queue-dot" id="queue-dot"></span>
+        <span id="queue-text">Queue: 0 jobs</span>
+      </div>
+
+      <label class="check-row">
+        <input type="checkbox" id="sync-enabled" {% if config.sync_enabled %}checked{% endif %}>
+        Stay up to date with an SMB share
+      </label>
+
+      <label class="check-row" title="Off (default): a file already present locally is left alone, no matter what. On: every file is re-checked against the source and updated if it changed — use this after retagging or otherwise editing files already on the device. Music files rarely change, so this is much slower and normally unnecessary.">
+        <input type="checkbox" id="compare-enabled" {% if config.compare_enabled %}checked{% endif %}>
+        Check existing files for changes (slower, more accurate)
+      </label>
+
+      <div class="field">
+        <label for="smb-source">Source path (//host/share/path)</label>
+        <input id="smb-source" value="{{ config.smb_source }}" placeholder="//nas-host/share/path/to/library">
+      </div>
+      <div class="field">
+        <label for="smb-username">Username</label>
+        <input id="smb-username" value="{{ config.smb_username }}">
+      </div>
+      <div class="field">
+        <label for="smb-password">Password</label>
+        <input id="smb-password" value="{{ config.smb_password }}" type="password"
+               title="Use a read-only single-share account — credentials are stored in plain text on the music partition (exFAT has no file permissions)">
+      </div>
+
+      <div class="action-row">
+        <button class="btn btn-secondary" onclick="testLibrarySync(this)">Test Reachability</button>
+        <button class="btn btn-primary" onclick="syncNow(this)">Sync Now</button>
+      </div>
+      <div id="sync-test-results" class="action-result"></div>
+    </div>
+  </div>
+
+  <!-- ── Bluetooth ─────────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-label">Bluetooth</div>
+
+    <div class="card" id="card-bt">
+      <div class="card-header">
+        <h2>Mode</h2>
+      </div>
+
+      <div class="bt-radios" id="bt-radios">
+        <label class="bt-radio-row">
+          <input type="radio" name="bt_mode" value="target" {% if config.bt_mode == 'target' %}checked{% endif %}>
+          <span>Listen as {{ config.instance_name }}</span>
+        </label>
+        <label class="bt-radio-row">
+          <input type="radio" name="bt_mode" value="off" {% if config.bt_mode == 'off' %}checked{% endif %}>
+          <span>Off</span>
+        </label>
+        <label class="bt-radio-row">
+          <input type="radio" name="bt_mode" value="source" {% if config.bt_mode == 'source' %}checked{% endif %}>
+          <span>Output to
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                 style="vertical-align:middle; margin: 0 1px;">
+              <path d="M6.5 17.5L12 12 17.5 17.5 12 22V2l5.5 4.5L12 12 6.5 6.5"/>
+            </svg>
+            device</span>
+        </label>
+      </div>
+
+      <div id="bt-source-block" style="{% if config.bt_mode != 'source' %}display:none;{% endif %}">
+        <!-- Currently connected output -->
+        <div id="bt-connected-section" style="{% if not connected_bt %}display:none;{% endif %} margin-bottom: var(--s3);">
+          <div class="bt-row">
+            <span class="bt-row-name">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                   style="color:var(--success); margin-right:4px; vertical-align:middle;">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span id="bt-connected-alias">{{ connected_bt.alias if connected_bt }}</span>
+            </span>
+            <button class="btn btn-sm btn-secondary"
+                    onclick="btDisconnect('{{ connected_bt.mac if connected_bt }}', this)"
+                    id="bt-disconnect-btn">Disconnect</button>
+          </div>
+        </div>
+
+        <!-- Scan -->
+        <button class="btn btn-secondary" onclick="btScan(this)" id="bt-scan-btn"
+                style="width:100%; margin-bottom: var(--s3);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/>
+          </svg>
+          Scan for Nearby Devices
+        </button>
+        <div id="bt-scan-results" style="margin-bottom: var(--s3); font-size:13px;"></div>
+
+        <!-- Known outputs — always visible in source mode -->
+        {% if known_devices %}
+        <div class="field">
+          <label>Known Outputs</label>
+          <div id="bt-known-list">
+            {% for d in known_devices %}
+            <div class="bt-row">
+              <span class="bt-row-name">
+                {{ d.alias }}
+                <span class="bt-row-role">({{ d.role }})</span>
+              </span>
+              <button class="btn btn-sm btn-secondary" onclick="btConnect('{{ d.mac }}', this)">Connect</button>
+              <button class="btn btn-sm btn-danger" onclick="btForget('{{ d.mac }}')">Forget</button>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% else %}
+        <span style="font-size:12px; color:var(--text-3); display:block; margin-top:var(--s3);">No devices paired yet — scan to add one.</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Access ─────────────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-label">Access</div>
+
+    <div class="card" id="card-ssh">
+      <div class="card-spinner-overlay"><div class="spinner"></div></div>
+      <div class="card-header">
+        <h2>SSH</h2>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-secondary card-revert">&#8634; Revert</button>
+          <button class="btn btn-sm btn-primary card-save">Save</button>
+        </div>
+      </div>
+      <label class="check-row" title="Reachable from guest AP and home LAN — disable when not in use">
+        <input type="checkbox" id="ssh-enabled" {% if config.ssh_enabled %}checked{% endif %}>
+        Enabled
+      </label>
+      <div class="field">
+        <label for="authorized-keys">Public keys — one per line</label>
+        <textarea id="authorized-keys" rows="4" title="Additive to the build-time key">{{ authorized_keys }}</textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Config management ────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-label">Config Management</div>
+    <div class="utility-row">
+      <a href="/api/config/backup" class="btn btn-secondary"
+         title="Download config, known BT devices, and SSH keys">Backup</a>
+      <button type="button" id="restore-btn" class="btn btn-secondary"
+              onclick="document.getElementById('restore-file').click()"
+              title="Restore from a previously downloaded backup file">Restore</button>
+      <input type="file" id="restore-file" accept="application/json"
+             style="display:none;" onchange="restoreConfig(this)">
+      <button onclick="factoryReset()" class="btn btn-destructive"
+              title="Clears all config and reboots">Factory Reset</button>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<script src="{{ url_for('static', filename='palette.js') }}"></script>
+<script>
+  function flash(msg, type) {
+    const el = document.getElementById('flash');
+    el.textContent = msg;
+    el.className = 'flash ' + type;
+    setTimeout(() => el.style.display = 'none', 5000);
+  }
+
+  function setBusy(btn, label) {
+    if (!btn) return;
+    if (!btn.dataset.origText) btn.dataset.origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = label;
+  }
+  function clearBusy(btn) {
+    if (!btn) return;
+    btn.disabled = false;
+    if (btn.dataset.origText) btn.textContent = btn.dataset.origText;
+  }
+  function flashButton(btn, label, revertMs) {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.textContent = label;
+    setTimeout(() => { if (btn.dataset.origText) btn.textContent = btn.dataset.origText; }, revertMs || 1500);
+  }
+
+  function postConfig(fields) {
+    return fetch('/api/config', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(fields)
+    })
+    .then(r => r.json().then(body => ({ ok: r.ok, body })))
+    .then(({ ok, body }) => { if (!ok) throw new Error(body.error || 'Save failed'); });
+  }
+
+  function initCard(card, fieldIds, saveFn, fieldMap) {
+    if (!card) return { flush: () => Promise.resolve(false), revert: () => {}, flash: flash };
+    const fields = fieldIds.map(id => document.getElementById(id)).filter(Boolean);
+
+    // Per-card flash area, injected after the card header
+    const flashEl = document.createElement('div');
+    flashEl.className = 'flash card-flash';
+    const header = card.querySelector('.card-header');
+    if (header) header.after(flashEl); else card.prepend(flashEl);
+    let flashTimer;
+    function cardFlash(msg, type) {
+      clearTimeout(flashTimer);
+      flashEl.textContent = msg;
+      flashEl.className = 'flash card-flash ' + type;
+      flashTimer = setTimeout(() => { flashEl.style.display = 'none'; }, 6000);
+    }
+    let baseline = snapshot();
+    let inFlight = false;
+
+    function snapshot() {
+      const v = {};
+      fields.forEach(f => { v[f.id] = (f.type === 'checkbox') ? f.checked : f.value; });
+      return v;
+    }
+    function isDirty() {
+      const cur = snapshot();
+      return fields.some(f => cur[f.id] !== baseline[f.id]);
+    }
+    function updateUI() {
+      card.classList.toggle('dirty', isDirty() && !inFlight);
+    }
+    function revert() {
+      fields.forEach(f => {
+        if (f.type === 'checkbox') f.checked = baseline[f.id]; else f.value = baseline[f.id];
+      });
+      updateUI();
+    }
+    function refreshFromServer() {
+      return fetch('/api/config').then(r => r.json()).then(cfg => {
+        if (fieldMap) {
+          fields.forEach(f => {
+            const key = fieldMap[f.id];
+            if (!key || !(key in cfg)) return;
+            if (f.type === 'checkbox') f.checked = cfg[key]; else f.value = cfg[key];
+          });
+        }
+        baseline = snapshot();
+      }).catch(() => { baseline = snapshot(); });
+    }
+    function flush() {
+      if (!isDirty() || inFlight) return Promise.resolve(false);
+      inFlight = true;
+      card.classList.add('saving');
+      updateUI();
+      return saveFn()
+        .then(refreshFromServer)
+        .then(() => true)
+        .catch(e => { cardFlash(e.message || 'Save failed', e.type || 'error'); throw e; })
+        .finally(() => { inFlight = false; card.classList.remove('saving'); updateUI(); });
+    }
+
+    fields.forEach(f => {
+      const evt = (f.type === 'checkbox' || f.tagName === 'SELECT') ? 'change' : 'input';
+      f.addEventListener(evt, updateUI);
+    });
+    const saveBtn = card.querySelector('.card-save');
+    if (saveBtn) saveBtn.addEventListener('click', () => flush().catch(() => {}));
+    const revertBtn = card.querySelector('.card-revert');
+    if (revertBtn) revertBtn.addEventListener('click', revert);
+
+    return { flush, revert, flash: cardFlash };
+  }
+
+  function refreshWifiStatus() {
+    fetch('/api/wifi/status')
+      .then(r => r.json())
+      .then(d => {
+        const el = document.getElementById('wifi-status');
+        if (d.connected) {
+          el.innerHTML = '<span class="ok">Connected</span> — ' + d.ssid + ' (' + d.ip + ')';
+          el.classList.add('visible');
+        } else {
+          el.classList.remove('visible');
+        }
+      })
+      .catch(() => {});
+  }
+
+  function refreshSyncStatus() {
+    fetch('/api/library/status')
+      .then(r => r.json())
+      .then(d => {
+        const dot = document.getElementById('queue-dot');
+        const txt = document.getElementById('queue-text');
+        if (!txt) return;
+        const q = d.queue || {};
+        const total = (q.qualify||0) + (q.compare||0) + (q.sync||0) + (q.prune||0);
+        const parts = [
+          ['qualify','qualifying'], ['compare','comparing'],
+          ['sync','to sync'],       ['prune','to prune'],
+        ].flatMap(([k,label]) => q[k] ? [q[k] + ' ' + label] : []);
+        txt.textContent = parts.length ? 'Queue: ' + parts.join(' · ') : 'Queue: 0 jobs';
+        if (dot) dot.classList.toggle('active', total > 0);
+      })
+      .catch(e => console.error('Sync status refresh failed', e));
+  }
+
+  function librarySyncPayload() {
+    return {
+      sync_enabled:    document.getElementById('sync-enabled').checked,
+      compare_enabled: document.getElementById('compare-enabled').checked,
+      smb_source:      document.getElementById('smb-source').value,
+      smb_username:    document.getElementById('smb-username').value,
+      smb_password:    document.getElementById('smb-password').value,
+    };
+  }
+
+  function factoryReset() {
+    if (!confirm('Factory reset? This clears all config and reboots.')) return;
+    fetch('/api/factory-reset', { method: 'POST' })
+      .then(r => r.json())
+      .then(() => { flash('Factory reset. Rebooting…', 'success'); setTimeout(() => fetch('/api/reboot', {method:'POST'}), 1000); })
+      .catch(() => flash('Error', 'error'));
+  }
+
+  function saveSsh() {
+    const sshEnabled = document.getElementById('ssh-enabled').checked;
+    const keys = document.getElementById('authorized-keys').value;
+    return Promise.all([
+      fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ssh_enabled: sshEnabled}) })
+        .then(r => r.json().then(body => ({ ok: r.ok, body }))),
+      fetch('/api/ssh/authorized-keys', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({keys}) })
+        .then(r => r.json().then(body => ({ ok: r.ok, body }))),
+    ]).then(([cfgResult, keysResult]) => {
+      if (!(cfgResult.ok && keysResult.ok && keysResult.body.status === 'ok')) {
+        const err = !cfgResult.ok
+          ? (cfgResult.body.error || 'Failed to save SSH toggle')
+          : (keysResult.body.error || 'Failed to save keys');
+        throw new Error(err);
+      }
+    });
+  }
+
+  function setDatetime(btn) {
+    setBusy(btn, 'Setting…');
+    const value = document.getElementById('manual-datetime').value;
+    fetch('/api/datetime', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({datetime: value}) })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'ok') flashButton(btn, 'Done!');
+        else { clearBusy(btn); timeCardFlash(d.error || 'Failed', 'error'); }
+      })
+      .catch(() => { clearBusy(btn); timeCardFlash('Failed to set date & time', 'error'); });
+  }
+
+  function syncNow(btn) {
+    setBusy(btn, 'Saving…');
+    syncCardController.flush()
+      .then(() => { setBusy(btn, 'Starting…'); return fetch('/api/library/discover', {method:'POST'}); })
+      .then(() => flashButton(btn, 'Sync started!'))
+      .catch(() => { clearBusy(btn); syncCardFlash('Failed to start sync', 'error'); });
+  }
+
+  function testLibrarySync(btn) {
+    const el = document.getElementById('sync-test-results');
+    el.textContent = '';
+    setBusy(btn, 'Saving…');
+    syncCardController.flush()
+      .then(() => { setBusy(btn, 'Testing…'); return fetch('/api/library/test', {method:'POST'}); })
+      .then(r => r.json().then(body => ({ ok: r.ok, body })))
+      .then(({ ok, body }) => {
+        clearBusy(btn);
+        el.className = 'action-result ' + (ok && body.status === 'ok' ? 'test-ok' : 'test-err');
+        el.textContent = (ok && body.status === 'ok') ? (body.message || 'Reachable.') : (body.error || 'Test failed');
+      })
+      .catch(() => { clearBusy(btn); el.className = 'action-result test-err'; el.textContent = 'Request failed'; });
+  }
+
+  let btActionInFlight = false;
+  function btLockCard()   { btActionInFlight = true;  document.querySelectorAll('#card-bt button').forEach(b => b.disabled = true); }
+  function btUnlockCard() { btActionInFlight = false; document.querySelectorAll('#card-bt button').forEach(b => b.disabled = false); }
+
+  function showBtConnected(alias, mac) {
+    document.getElementById('bt-connected-alias').textContent = alias;
+    document.getElementById('bt-disconnect-btn').setAttribute('onclick', "btDisconnect('" + mac + "', this)");
+    document.getElementById('bt-connected-section').style.display = '';
+  }
+  function showBtDisconnected() {
+    document.getElementById('bt-connected-section').style.display = 'none';
+  }
+
+  function btScan(btn) {
+    if (btActionInFlight) return;
+    btLockCard();
+    setBusy(btn, 'Scanning (10s)…');
+    const el = document.getElementById('bt-scan-results');
+    el.textContent = 'Scanning…';
+    fetch('/api/bt/scan', {method:'POST'})
+      .then(r => r.json())
+      .then(d => {
+        btUnlockCard(); clearBusy(btn);
+        if (!d.devices || !d.devices.length) { el.textContent = d.error || 'No devices found.'; return; }
+        el.innerHTML = '';
+        d.devices.forEach(dev => {
+          const row = document.createElement('div');
+          row.className = 'bt-row';
+          const name = document.createElement('span');
+          name.className = 'bt-row-name';
+          name.textContent = dev.name;
+          const pairBtn = document.createElement('button');
+          pairBtn.className = 'btn btn-sm btn-secondary';
+          pairBtn.textContent = 'Pair';
+          pairBtn.onclick = () => btPair(dev.mac, pairBtn);
+          row.appendChild(name);
+          row.appendChild(pairBtn);
+          el.appendChild(row);
+        });
+      })
+      .catch(() => { btUnlockCard(); clearBusy(btn); el.textContent = 'Scan failed.'; });
+  }
+
+  function btPair(mac, btn) {
+    if (btActionInFlight) return;
+    btLockCard();
+    setBusy(btn, 'Pairing…');
+    fetch('/api/bt/pair', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mac}) })
+      .then(r => r.json())
+      .then(d => {
+        btUnlockCard();
+        if (d.status === 'ok') { btCardFlash('Paired with ' + d.name, 'success'); showBtConnected(d.alias, d.mac); }
+        else { clearBusy(btn); btCardFlash(d.error || 'Pairing failed', 'error'); }
+      })
+      .catch(() => { btUnlockCard(); clearBusy(btn); btCardFlash('Pairing failed', 'error'); });
+  }
+
+  function btConnect(mac, btn) {
+    if (btActionInFlight) return;
+    btLockCard();
+    setBusy(btn, 'Connecting…');
+    fetch('/api/bt/connect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mac}) })
+      .then(r => r.json())
+      .then(d => {
+        btUnlockCard();
+        if (d.status === 'ok') { btCardFlash('Connected', 'success'); showBtConnected(d.alias, d.mac); }
+        else { clearBusy(btn); btCardFlash(d.error || 'Connect failed', 'error'); }
+      })
+      .catch(() => { btUnlockCard(); clearBusy(btn); btCardFlash('Connect failed', 'error'); });
+  }
+
+  function btDisconnect(mac, btn) {
+    if (btActionInFlight) return;
+    btLockCard();
+    setBusy(btn, 'Disconnecting…');
+    fetch('/api/bt/disconnect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mac}) })
+      .then(r => r.json())
+      .then(d => {
+        btUnlockCard();
+        if (d.status === 'ok') { btCardFlash('Disconnected', 'success'); showBtDisconnected(); }
+        else { clearBusy(btn); btCardFlash(d.error || 'Disconnect failed', 'error'); }
+      })
+      .catch(() => { btUnlockCard(); clearBusy(btn); btCardFlash('Disconnect failed', 'error'); });
+  }
+
+  function btForget(mac) {
+    if (btActionInFlight) return;
+    btLockCard();
+    fetch('/api/bt/known', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({mac, action: 'remove'}) })
+      .then(r => r.json())
+      .then(() => location.reload())
+      .catch(() => { btUnlockCard(); btCardFlash('Failed to remove', 'error'); });
+  }
+
+  function setBtMode(mode) {
+    document.querySelectorAll('input[name="bt_mode"]').forEach(r => r.disabled = true);
+    fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({bt_mode: mode}) })
+      .then(r => r.json())
+      .then(d => {
+        document.querySelectorAll('input[name="bt_mode"]').forEach(r => {
+          r.disabled = false;
+          r.checked = (r.value === mode);
+        });
+        if (d.status === 'ok') {
+          const sourceBlock = document.getElementById('bt-source-block');
+          if (sourceBlock) sourceBlock.style.display = mode === 'source' ? '' : 'none';
+        } else {
+          btCardFlash(d.error || 'Failed to switch Bluetooth mode', 'error');
+        }
+      })
+      .catch(() => {
+        btCardFlash('Failed to switch Bluetooth mode', 'error');
+        document.querySelectorAll('input[name="bt_mode"]').forEach(r => r.disabled = false);
+      });
+  }
+
+  document.querySelectorAll('input[name="bt_mode"]').forEach(radio => {
+    radio.addEventListener('change', () => { if (radio.checked) setBtMode(radio.value); });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && window.parent && window.parent !== window) {
+      try { window.parent.closeSettings(); } catch (e) {}
+    }
+  });
+
+  function restoreConfig(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const btn = document.getElementById('restore-btn');
+    if (!confirm('Restore from "' + file.name + '"? This overwrites config, known BT devices, and SSH keys. The guest AP will be turned on as a safety net.')) {
+      input.value = ''; return;
+    }
+    setBusy(btn, 'Reading file…');
+    const reader = new FileReader();
+    reader.onload = () => {
+      let data;
+      try { data = JSON.parse(reader.result); }
+      catch (e) { clearBusy(btn); flash('Not a valid backup file', 'error'); input.value = ''; return; }
+      setBusy(btn, 'Restoring…');
+      fetch('/api/config/restore', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(data) })
+        .then(r => r.json().then(body => ({ ok: r.ok, body })))
+        .then(({ ok, body }) => {
+          if (!ok) throw new Error(body.error || 'Restore failed');
+          if (body.warnings && body.warnings.length) {
+            setBusy(btn, 'Restored with warnings — reloading…');
+            flash('Restored, but some settings may not have applied: ' + body.warnings.join('; '), 'error');
+            setTimeout(() => location.reload(), 2500);
+          } else {
+            setBusy(btn, 'Restored — reloading…');
+            flash('Restored — reloading…', 'success');
+            setTimeout(() => location.reload(), 1200);
+          }
+        })
+        .catch(e => { clearBusy(btn); flash(e.message || 'Restore failed', 'error'); input.value = ''; });
+    };
+    reader.onerror = () => { clearBusy(btn); flash('Could not read that file', 'error'); input.value = ''; };
+    reader.readAsText(file);
+  }
+
+  let syncCardController;
+  let paletteCardCtrl;
+  let timeCardFlash, syncCardFlash, btCardFlash;
+  const cardControllers = [];
+
+  function scrollToInstanceName() {
+    document.getElementById('card-instance-name')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ── Band name generator ────────────────────────────────────────────────────
+  function generateBandName() {
+    const pick = a => a[Math.floor(Math.random() * a.length)];
+
+    const adj = ['Electric','Velvet','Hollow','Cosmic','Savage','Neon','Rusty',
+      'Ancient','Bitter','Golden','Midnight','Plastic','Spectral','Chrome',
+      'Frozen','Casual','Reckless','Invisible','Suburban','Vintage','Haunted',
+      'Soggy','Furious','Glamorous','Filthy','Deluxe','Discount','Premium',
+      'Abandoned','Celestial','Polite','Tremendous','Lukewarm','Eternal',
+      'Dirty','Wicked','Lonesome','Crooked','Tender','Righteous','Wretched',
+      'Hollow','Blazing','Cursed','Infamous','Solemn','Ragged','Thunderous'];
+
+    const noun = ['Thunder','Wizard','Falcon','Dagger','Phantom','Robot','Pickle',
+      'Stallion','Biscuit','Vortex','Banjo','Casket','Lettuce','Satellite',
+      'Panther','Mango','Goblin','Porcupine','Trombone','Weasel','Narwhal',
+      'Tambourine','Raven','Waffle','Mongoose','Coyote','Dirigible','Lemur',
+      'Harmonica','Spatula','Cormorant','Hamster','Almanac','Centaur',
+      'Crescent','Specter','Bayou','Canyon','Turnpike','Jukebox','Cactus'];
+
+    const plural = ['Wolves','Saints','Ghosts','Pilots','Prophets','Outlaws',
+      'Vipers','Sparrows','Comets','Bishops','Vandals','Minstrels','Herons',
+      'Nomads','Martyrs','Urchins','Baronets','Wanderers','Apostles','Drifters',
+      'Monarchs','Scoundrels','Strangers','Cavaliers','Skeptics','Pilgrims',
+      'Chiefs','Bandits','Rangers','Warlocks','Deacons','Renegades','Phantoms',
+      'Crusaders','Hellcats','Troubadours','Undertakers','Desperados'];
+
+    const place = ['Tulsa','Memphis','Reno','Toledo','Fresno','Bakersfield',
+      'Chattanooga','Duluth','Akron','Tucson','Wichita','Spokane','Laramie',
+      'Flagstaff','Shreveport','Pensacola','Amarillo','Bozeman','Tallahassee',
+      'Abilene','Savannah','Galveston','Baton Rouge','El Paso','Albuquerque'];
+
+    const first = ['Dean','Earl','Clem','Ronnie','Darla','Wanda','Buck','Loretta',
+      'Wayne','Dottie','Merle','Tammy','Floyd','Hank','Dolly','Roy','Patsy',
+      'Waylon','Bobbie','Gene','Stella','Rex','Lucinda','Clyde','Laverne'];
+
+    const last = ['Johnson','McCloud','Beaumont','Fontaine','Kowalski','Nakamura',
+      'Delacroix','Whitfield','Brennan','Espinoza','Okafor','Thibodeau',
+      'Gallagher','Abramowitz','Castellano','Duchamp','Okonkwo','Hirschfeld',
+      'Calloway','Devereux','Piccolo','Szymanski','Moreau','Vandenberg'];
+
+    const verb = ['Burning','Falling','Rising','Sleeping','Screaming','Wandering',
+      'Fading','Howling','Crumbling','Glowing','Collapsing','Drifting',
+      'Smoldering','Unraveling','Descending','Ascending','Dissolving',
+      'Stampeding','Thundering','Lurking','Vanishing','Reckoning'];
+
+    // Weighted coin: true with probability p
+    const chance = p => Math.random() < p;
+
+    // Core template: "[maybe-adj] X and the [maybe-adj] Y"
+    // X and Y each get a modifier independently, weighted toward X more than Y
+    const andTheTemplate = () => {
+      const xBase = chance(0.45) ? pick(first)
+                  : chance(0.4)  ? pick(noun)
+                  :                pick(last);
+      // Y is either a plain plural or a noun-compound plural (e.g. "Thunder Chiefs")
+      const yBase = chance(0.4) ? `${pick(noun)} ${pick(plural)}` : pick(plural);
+      const x = chance(0.55) ? `${pick(adj)} ${xBase}` : xBase;
+      const y = chance(0.35) ? `${pick(adj)} ${yBase}` : yBase;
+      return `${x} and the ${y}`;
+    };
+
+    const templates = [
+      andTheTemplate,
+      andTheTemplate,               // double weight — it's the hero pattern
+      () => `The ${pick(adj)} ${pick(plural)}`,
+      () => `The ${pick(verb)} ${pick(plural)}`,
+      () => `The ${pick(place)} ${pick(plural)}`,
+      () => `The ${pick(noun)}s of ${pick(place)}`,
+      () => `${pick(adj)} ${pick(noun)}`,
+      () => `${pick(adj)} ${pick(adj)} ${pick(noun)}`,
+      () => `${pick(last)}'s ${pick(adj)} ${pick(plural)}`,
+      () => `${pick(place)} ${pick(noun)} ${pick(plural)}`,
+    ];
+
+    const el = document.getElementById('instance-name');
+    el.value = pick(templates)();
+    el.dispatchEvent(new Event('input'));
+  }
+
+  function initCards() {
+    cardControllers.push(initCard(document.getElementById('card-instance-name'),
+      ['instance-name'],
+      () => {
+        const name = document.getElementById('instance-name').value;
+        return postConfig({ instance_name: name }).then(() => {
+          window.parent.postMessage({ type: 'instance-name-changed', instanceName: name }, '*');
+        });
+      },
+      { 'instance-name': 'instance_name' }));
+
+    cardControllers.push(initCard(document.getElementById('card-features'),
+      ['airplay-enabled'],
+      () => postConfig({ airplay_enabled: document.getElementById('airplay-enabled').checked }),
+      { 'airplay-enabled': 'airplay_enabled' }));
+
+    cardControllers.push(initCard(document.getElementById('card-ap'),
+      ['ap-enabled', 'ap-password'],
+      () => {
+        const pw = document.getElementById('ap-password').value;
+        if (pw && pw.length < 8) {
+          const e = new Error('Password must be at least 8 characters (WPA2 minimum), or leave it blank for an open network.');
+          e.type = 'warn';
+          return Promise.reject(e);
+        }
+        return postConfig({
+          ap_enabled: document.getElementById('ap-enabled').checked,
+          ap_password: pw,
+        });
+      },
+      { 'ap-enabled': 'ap_enabled', 'ap-password': 'ap_password' }));
+
+    cardControllers.push(initCard(document.getElementById('card-wifi'),
+      ['wifi-client-enabled', 'wifi-ssid', 'wifi-password', 'log-export'],
+      () => postConfig({
+        wifi_client_enabled: document.getElementById('wifi-client-enabled').checked,
+        wifi_client_ssid:    document.getElementById('wifi-ssid').value,
+        wifi_client_password: document.getElementById('wifi-password').value,
+        log_export:          document.getElementById('log-export').value,
+      }),
+      { 'wifi-client-enabled': 'wifi_client_enabled', 'wifi-ssid': 'wifi_client_ssid',
+        'wifi-password': 'wifi_client_password', 'log-export': 'log_export' }));
+
+    const timeCtrl = initCard(document.getElementById('card-time'),
+      ['timezone', 'ntp-enabled'],
+      () => postConfig({
+        timezone: document.getElementById('timezone').value,
+        ntp_enabled: document.getElementById('ntp-enabled').checked,
+      }),
+      { 'timezone': 'timezone', 'ntp-enabled': 'ntp_enabled' });
+    timeCardFlash = timeCtrl.flash;
+    cardControllers.push(timeCtrl);
+
+    syncCardController = initCard(document.getElementById('card-sync'),
+      ['sync-enabled', 'compare-enabled', 'smb-source', 'smb-username', 'smb-password'],
+      () => postConfig(librarySyncPayload()),
+      { 'sync-enabled': 'sync_enabled', 'compare-enabled': 'compare_enabled',
+        'smb-source': 'smb_source',
+        'smb-username': 'smb_username', 'smb-password': 'smb_password' });
+    syncCardFlash = syncCardController.flash;
+    cardControllers.push(syncCardController);
+
+    const btCtrl = initCard(document.getElementById('card-bt'), [], () => Promise.resolve());
+    btCardFlash = btCtrl.flash;
+
+    paletteCardCtrl = initCard(document.getElementById('card-palette'), [], () => Promise.resolve());
+
+    cardControllers.push(initCard(document.getElementById('card-ssh'),
+      ['ssh-enabled', 'authorized-keys'],
+      saveSsh,
+      { 'ssh-enabled': 'ssh_enabled' }));
+  }
+
+  window.revertAllCards = function () {
+    cardControllers.forEach(c => c.revert());
+  };
+
+  // ── Palette Picker ─────────────────────────────────────────────────────────
+  const PALETTES = [
+    { name: 'Surf Rock',   bg: '#f4e8cc', c1: '#5c2a0a', c2: '#e8601a', c3: '#f0c218', c4: '#9ccce8' },
+    { name: 'Vaporwave',   bg: '#1a0828', c1: '#c020c0', c2: '#a860e8', c3: '#20d0e8', c4: '#f8e0ff' },
+    { name: 'Chiptunes',   bg: '#040808', c1: '#c0c8c0', c2: '#2878f0', c3: '#18c850', c4: '#f0f828' },
+    { name: 'Love Songs',  bg: '#f8c0d0', c1: '#a00020', c2: '#6a1860', c3: '#f02888', c4: '#c4d6f8' },
+    { name: 'Country',     bg: '#f2e8d4', c1: '#4a2808', c2: '#c87820', c3: '#3868a8', c4: '#a8c8a0' },
+    { name: 'Hip-hop',     bg: '#080608', c1: '#c88000', c2: '#f0c018', c3: '#c0c0c0', c4: '#f8f8f0' },
+    { name: 'Dance',       bg: '#100418', c1: '#6020d0', c2: '#20e0f0', c3: '#f040a0', c4: '#f8f050' },
+    { name: 'Heavy Metal', bg: '#080808', c1: '#aa0000', c2: '#cc1010', c3: '#888888', c4: '#e0e0e0' },
+    { name: 'Classical',   bg: '#e4d4a0', c1: '#1e0c04', c2: '#7a1c18', c3: '#c07818', c4: '#f0c848' },
+    { name: 'Pop',         bg: '#fff0f8', c1: '#c01880', c2: '#20a8e0', c3: '#f4e830', c4: '#e89020' },
+    { name: 'Musicals',    bg: '#f4e8d0', c1: '#680a80', c2: '#c02820', c3: '#c89810', c4: '#f0e070' },
+    { name: 'Folk',        bg: '#f4f0e4', c1: '#382010', c2: '#2a5030', c3: '#c86030', c4: '#a8d4b8' },
+    { name: 'Blues',       bg: '#f0f4fc', c1: '#0a2860', c2: '#1060c0', c3: '#2090e0', c4: '#80c8f8' },
+  ];
+  const INDIE_IDX = PALETTES.length;
+
+  // hexLuma/hexLighten/hexToRgba/paletteTokens/applyPaletteVars now live in
+  // static/palette.js, shared with toolbar.html — see that file's header
+  // comment for why it has to stay in sync with app.py's palette_css_vars().
+  function applyPalette(p) {
+    applyPaletteVars(p);
+    fitBrandMark();
+  }
+
+  let paletteBaselineIdx = 0;
+  let paletteActiveIdx = 0;
+  let indieColors = { bg: '#888888', c1: '#222222', c2: '#ff6600', c3: '#ffcc00', c4: '#88ccff' };
+  let indieBaseline = { ...indieColors };
+
+  function isPaletteDirty() {
+    if (paletteActiveIdx !== paletteBaselineIdx) return true;
+    if (paletteActiveIdx === INDIE_IDX)
+      return ['bg','c1','c2','c3','c4'].some(k => indieColors[k] !== indieBaseline[k]);
+    return false;
+  }
+
+  function updatePaletteActions() {
+    const dirty = isPaletteDirty();
+    const el = document.getElementById('palette-actions');
+    if (el) el.style.display = dirty ? '' : 'none';
+    const card = document.getElementById('card-palette');
+    if (card) card.classList.toggle('dirty', dirty);
+  }
+
+  function updateSwatchStyle(btn, p) {
+    btn.style.cssText = `--sw-bg:${p.bg};--sw-c1:${p.c1};--sw-c2:${p.c2};--sw-c3:${p.c3};--sw-c4:${p.c4}`;
+  }
+
+  function selectPalette(idx) {
+    paletteActiveIdx = idx;
+    document.querySelectorAll('.palette-swatch-btn').forEach((btn, i) => {
+      btn.classList.toggle('active', i === idx);
+    });
+    const indie = document.getElementById('indie-editor');
+    if (indie) indie.style.display = idx === INDIE_IDX ? '' : 'none';
+    applyPalette(idx === INDIE_IDX ? indieColors : PALETTES[idx]);
+    updatePaletteActions();
+  }
+
+  function savePalette() {
+    const p = paletteActiveIdx === INDIE_IDX ? indieColors : PALETTES[paletteActiveIdx];
+    const palette = { bg: p.bg, c1: p.c1, c2: p.c2, c3: p.c3, c4: p.c4 };
+    postConfig({ palette })
+      .then(() => {
+        paletteBaselineIdx = paletteActiveIdx;
+        if (paletteActiveIdx === INDIE_IDX) indieBaseline = { ...indieColors };
+        updatePaletteActions();
+        paletteCardCtrl.flash('Palette saved', 'success');
+        // Notify parent toolbar to update its CSS vars and reload myMPD frame
+        try {
+          window.parent.postMessage({ type: 'palette-changed', palette }, '*');
+        } catch (e) {}
+      })
+      .catch(e => paletteCardCtrl.flash(e.message || 'Save failed', 'error'));
+  }
+
+  function revertPalette() {
+    if (paletteBaselineIdx === INDIE_IDX) {
+      indieColors = { ...indieBaseline };
+      syncIndieEditor();
+    }
+    selectPalette(paletteBaselineIdx);
+  }
+
+  function syncIndieEditor() {
+    ['bg','c1','c2','c3','c4'].forEach(k => {
+      const picker = document.getElementById(`cp-${k}`);
+      const hexInput = document.getElementById(`cp-${k}-hex`);
+      if (picker) picker.value = indieColors[k];
+      if (hexInput) hexInput.value = indieColors[k];
+    });
+    const btns = document.querySelectorAll('.palette-swatch-btn');
+    if (btns[INDIE_IDX]) updateSwatchStyle(btns[INDIE_IDX], indieColors);
+  }
+
+  function initIndieEditor() {
+    ['bg','c1','c2','c3','c4'].forEach(k => {
+      const picker = document.getElementById(`cp-${k}`);
+      const hexInput = document.getElementById(`cp-${k}-hex`);
+      if (picker) {
+        picker.value = indieColors[k];
+        picker.addEventListener('input', () => {
+          indieColors[k] = picker.value;
+          if (hexInput) hexInput.value = picker.value;
+          const btns = document.querySelectorAll('.palette-swatch-btn');
+          if (btns[INDIE_IDX]) updateSwatchStyle(btns[INDIE_IDX], indieColors);
+          if (paletteActiveIdx === INDIE_IDX) applyPalette(indieColors);
+          updatePaletteActions();
+        });
+      }
+      if (hexInput) {
+        hexInput.value = indieColors[k];
+        hexInput.addEventListener('change', () => {
+          const v = hexInput.value.trim();
+          if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+            indieColors[k] = v;
+            if (picker) picker.value = v;
+            const btns = document.querySelectorAll('.palette-swatch-btn');
+            if (btns[INDIE_IDX]) updateSwatchStyle(btns[INDIE_IDX], indieColors);
+            if (paletteActiveIdx === INDIE_IDX) applyPalette(indieColors);
+            updatePaletteActions();
+          }
+        });
+      }
+    });
+  }
+
+  function makeSwatch(p, idx) {
+    const btn = document.createElement('button');
+    btn.className = 'palette-swatch-btn';
+    btn.style.cssText = `--sw-bg:${p.bg};--sw-c1:${p.c1};--sw-c2:${p.c2};--sw-c3:${p.c3};--sw-c4:${p.c4}`;
+    btn.innerHTML = `<div class="swatch-sq"></div><div class="swatch-name">${p.name}</div>`;
+    btn.addEventListener('click', () => selectPalette(idx));
+    return btn;
+  }
+
+  function initPalettePicker() {
+    fetch('/api/config').then(r => r.json()).then(cfg => {
+      const saved = cfg.palette || {};
+      let matchIdx = 0;
+      if (saved.bg || saved.c1) {
+        const idx = PALETTES.findIndex(p =>
+          p.bg === saved.bg && p.c1 === saved.c1 && p.c2 === saved.c2
+        );
+        if (idx >= 0) {
+          matchIdx = idx;
+        } else {
+          matchIdx = INDIE_IDX;
+          indieColors = {
+            bg: saved.bg || indieColors.bg, c1: saved.c1 || indieColors.c1,
+            c2: saved.c2 || indieColors.c2, c3: saved.c3 || indieColors.c3,
+            c4: saved.c4 || indieColors.c4,
+          };
+          indieBaseline = { ...indieColors };
+        }
+      }
+      paletteBaselineIdx = matchIdx;
+      renderSwatches();
+      initIndieEditor();
+      selectPalette(matchIdx);
+      if (matchIdx === INDIE_IDX) syncIndieEditor();
+    }).catch(() => {
+      renderSwatches();
+      initIndieEditor();
+      selectPalette(0);
+    });
+  }
+
+  function renderSwatches() {
+    const grid = document.getElementById('palette-grid');
+    if (!grid) return;
+    PALETTES.forEach((p, i) => grid.appendChild(makeSwatch(p, i)));
+    grid.appendChild(makeSwatch({ ...indieColors, name: 'Indie<span class="swatch-sub">(Custom)</span>' }, INDIE_IDX));
+  }
+
+  initPalettePicker();
+
+  initCards();
+
+  // Live-update brand mark as instance name is typed, fitting to container width
+  function fitBrandMark() {
+    const mark = document.querySelector('.page-hero-mark .brand-mark');
+    if (!mark) return;
+    const container = mark.closest('.page-hero-mark');
+    const strokeColor = getComputedStyle(document.documentElement).getPropertyValue('--c4').trim();
+    const maxPx = 60, minPx = 14;
+    mark.style.fontSize = maxPx + 'px';
+    mark.style.webkitTextStroke = '6px ' + strokeColor;
+    // Lobster ink overflows both sides — 12px left padding + 18px right buffer
+    const maxW = container.clientWidth - 30;
+    if (mark.scrollWidth <= maxW) return;
+    let size = maxPx;
+    while (mark.scrollWidth > maxW && size > minPx) {
+      size--;
+      mark.style.fontSize = size + 'px';
+      mark.style.webkitTextStroke = Math.round(size * 0.1) + 'px ' + strokeColor;
+    }
+  }
+
+  const instanceInput = document.getElementById('instance-name');
+  if (instanceInput) {
+    instanceInput.addEventListener('input', () => {
+      const mark = document.querySelector('.page-hero-mark .brand-mark');
+      if (mark) mark.textContent = instanceInput.value || 'Zero-Fi';
+      fitBrandMark();
+    });
+  }
+  fitBrandMark();
+
+  refreshWifiStatus();
+  refreshSyncStatus();
+  setInterval(refreshSyncStatus, 3000);
+</script>
+</body>
+</html>

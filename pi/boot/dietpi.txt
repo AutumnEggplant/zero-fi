@@ -1,0 +1,27 @@
+# DietPi Configuration for Zero-Fi
+
+# ── Auto-Setup ─────────────────────────────────────────────────────────
+AUTO_SETUP_ENABLED=1
+
+AUTO_SETUP_LOCALE=en_US.UTF-8
+AUTO_SETUP_KEYBOARD_LAYOUT=us
+AUTO_SETUP_TIMEZONE=America/New_York
+
+# Network — AP only, no WiFi client (configured via Settings)
+AUTO_SETUP_NET_WIFI_ENABLED=0
+AUTO_SETUP_NET_ETHERNET_ENABLED=1
+
+AUTO_SETUP_AUTOSTART_LOGIN_USER=root
+AUTO_SETUP_SSH_SERVER_ENABLED=1
+AUTO_SETUP_GLOBAL_PASSWORD=zerofi
+
+AUTO_SETUP_HEADLESS=1
+
+# no swap — SD card wear
+AUTO_SETUP_SWAP_SIZE=0
+
+# ── System options ─────────────────────────────────────────────────────
+# Don't resize root — we have a third partition (music) after it
+AUTO_SETUP_ROOTFS_SIZE=0
+
+# No custom script on first boot — everything is pre-installed

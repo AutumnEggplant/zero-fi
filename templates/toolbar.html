@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ config.instance_name or 'Zero-Fi' }}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='zerofi.css') }}">
+  <style>
+    :root {
+      {% for k, v in palette_vars.items() %}{{ k }}: {{ v }};
+      {% endfor %}
+    }
+  </style>
+  <style>
+    html { height: 100%; }
+    body { height: 100%; display: flex; flex-direction: column; background: var(--bg); }
+
+    /* ── Responsive sizing tokens ────────────────────────────────── */
+    /* All toolbar dimensions scale continuously with viewport width  */
+    /* from their original compact values up to the 1.5× target.     */
+    :root {
+      --tb-h:        clamp(40px, 5.5vw, 60px);
+      --tb-font:     clamp(13px, 1.8vw, 20px);
+      --bt-font:     clamp(12px, 1.6vw, 18px);
+      --bt-h:        clamp(26px, 3.5vw, 39px);
+      --bt-px:       clamp(8px,  1.3vw, 15px);
+      --btn-sz:      clamp(28px, 3.8vw, 42px);
+      --bubble-font: clamp(11px, 1.4vw, 16px);
+      --bubble-px:   clamp(8px,  1.3vw, 15px);
+      --bubble-py:   clamp(3px,  0.5vw, 5px);
+      --tb-gap:      clamp(6px,  1vw,   12px);
+      --mark-font:   clamp(16px, 2.2vw, 24px);
+    }
+
+    /* ── Toolbar bar ─────────────────────────────────────────────── */
+    #toolbar {
+      height: var(--tb-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 clamp(8px, 1.2vw, 16px);
+      gap: var(--tb-gap);
+      font-family: var(--font-ui);
+      font-size: var(--tb-font);
+      color: var(--text-2);
+      -webkit-app-region: drag;
+    }
+    #toolbar > * { -webkit-app-region: no-drag; }
+
+
+    /* ── Spacer ──────────────────────────────────────────────────── */
+    .tb-spacer { flex: 1; }
+
+    /* ── Info bubbles ────────────────────────────────────────────── */
+    .tb-bubble {
+      display: inline-flex; align-items: center; gap: clamp(4px, 0.6vw, 7px);
+      padding: var(--bubble-py) var(--bubble-px);
+      background: var(--c1);
+      color: var(--c3);
+      border-radius: var(--r-sm);
+      font-size: var(--bubble-font); font-weight: 600;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .tb-bubble.maintenance { background: var(--danger); color: var(--danger-text); }
+    .tb-bubble svg { width: clamp(11px, 1.4vw, 16px); height: clamp(11px, 1.4vw, 16px); }
+
+    /* ── Icon buttons (settings, power) ─────────────────────────── */
+    .tb-icon-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: var(--btn-sz); height: var(--btn-sz);
+      background: none; border: 1px solid transparent;
+      border-radius: var(--r);
+      color: var(--text);
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+      flex-shrink: 0;
+    }
+    .tb-icon-btn:hover {
+      color: var(--text);
+      background: rgba(var(--c3-rgb), 0.18);
+      border-color: var(--border);
+    }
+    .tb-icon-btn svg { width: clamp(14px, 2vw, 22px); height: clamp(14px, 2vw, 22px); }
+
+    /* ── Power menu ──────────────────────────────────────────────── */
+    .power-menu { position: relative; }
+
+    .power-dropdown {
+      position: absolute; top: calc(100% + 6px); right: 0;
+      background: var(--card);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--r);
+      padding: var(--s1);
+      display: none; flex-direction: column; gap: 2px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      z-index: 1100;
+      min-width: 140px;
+    }
+    .power-dropdown.active { display: flex; }
+    .power-dropdown button {
+      display: flex; align-items: center; gap: var(--s2);
+      background: none; border: none;
+      color: var(--text-2);
+      padding: var(--s2) var(--s3);
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      font-family: var(--font-ui); font-size: 12px;
+      text-align: left;
+      transition: background 0.1s, color 0.1s;
+    }
+    .power-dropdown button:hover { background: var(--interactive-dim); color: var(--text); }
+    .power-dropdown button.danger:hover { background: rgba(176,56,40,0.2); color: var(--danger-text); }
+
+    /* ── myMPD frame ─────────────────────────────────────────────── */
+    /* flex:1 fills remaining height; overflow-y:auto lets myMPD      */
+    /* handle its own scroll without the parent clipping touch events */
+    #mympd-frame {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* ── Palette-reload overlay (covers iframe while myMPD restarts) ── */
+    #mympd-reload-overlay {
+      position: fixed;
+      top: calc(var(--tb-h) + 1px); left: 0; right: 0; bottom: 0;
+      background: var(--bg);
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      z-index: 500;
+    }
+    #mympd-reload-overlay.active { display: flex; }
+    #mympd-reload-overlay .reload-spinner {
+      width: 28px; height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--c2);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    #mympd-reload-overlay .reload-label {
+      font-size: 12px; font-family: var(--font-ui);
+      color: var(--text-3); letter-spacing: 0.04em;
+    }
+
+    /* ── BT source curtain (covers myMPD while a BT source is active) ── */
+    #bt-source-curtain {
+      position: fixed;
+      top: calc(var(--tb-h) + 1px); left: 0; right: 0; bottom: 0;
+      background: var(--bg);
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 501;
+    }
+    #bt-source-curtain.active { display: flex; }
+    #bt-source-curtain .curtain-icon {
+      font-size: 2.4rem;
+      color: var(--c1);
+      line-height: 1;
+    }
+    #bt-source-curtain .curtain-label {
+      font-size: 15px; font-weight: 600;
+      font-family: var(--font-ui);
+      color: var(--text);
+    }
+    #bt-source-curtain .curtain-sub {
+      font-size: 12px;
+      font-family: var(--font-ui);
+      color: var(--text-2);
+      letter-spacing: 0.03em;
+    }
+
+    /* ── Settings overlay ────────────────────────────────────────── */
+    .settings-overlay {
+      position: fixed; inset: 0;
+      background: rgba(8,5,3,0.55);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: none;
+      align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .settings-overlay.active { display: flex; }
+
+    .settings-panel-wrapper {
+      position: relative;
+      width: min(52vw, 720px);
+      height: 88vh;
+      min-width: 340px;
+    }
+    .settings-panel {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--r-lg);
+      box-shadow: 0 24px 64px rgba(0,0,0,0.7);
+      overflow: hidden;
+    }
+    .settings-panel iframe { width: 100%; height: 100%; border: none; display: block; }
+
+    .settings-loading {
+      position: absolute; inset: 0;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px;
+      z-index: 2;
+      transition: opacity 0.2s;
+    }
+    .settings-loading.done { opacity: 0; pointer-events: none; }
+    .settings-loading .sl-spinner {
+      width: 28px; height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--c2);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    .settings-loading .sl-label {
+      font-size: 12px; font-family: var(--font-ui);
+      color: var(--text-3); letter-spacing: 0.04em;
+    }
+
+    .settings-close {
+      position: absolute; top: -14px; right: -14px;
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      background: var(--card);
+      border: 2px solid var(--border-hi);
+      color: var(--text-2);
+      font-size: 16px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1001;
+      transition: background 0.12s, color 0.12s;
+    }
+    .settings-close:hover { background: var(--danger); color: var(--danger-text); }
+
+    /* Toolbar-scale brand mark — responsive */
+    .brand-mark--tb {
+      font-size: var(--mark-font);
+      color: var(--c1);
+      -webkit-text-stroke: clamp(2px, 0.27vw, 3px) var(--c4);
+      padding: 3px clamp(8px, 1.1vw, 12px) 5px;
+    }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+
+    <!-- Brand mark -->
+    <span class="brand-mark brand-mark--tb">{{ config.instance_name }}</span>
+
+    <!-- Spacer -->
+    <span class="tb-spacer"></span>
+
+    <!-- BT/output status bubble -->
+    <span class="tb-bubble" id="output-bubble" title="Bluetooth mode">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+           style="flex-shrink:0;">
+        <path d="M6.5 17.5L12 12 17.5 17.5 12 22V2l5.5 4.5L12 12 6.5 6.5"/>
+      </svg>
+      <span id="output-bubble-text">{% if config.bt_mode == 'off' %}Off{% elif config.bt_mode == 'target' %}target (not connected){% else %}output (not connected){% endif %}</span>
+    </span>
+
+    <!-- Clock bubble -->
+    <span class="tb-bubble" id="clock">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+           style="flex-shrink:0;">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+      <span id="clock-text">--:--</span>
+    </span>
+
+    {% if show_settings %}
+    <!-- Settings (gear) -->
+    <button class="tb-icon-btn" onclick="openSettings()" title="Settings" aria-label="Settings">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+
+    <!-- Help -->
+    <a class="tb-icon-btn" href="/help" target="_blank" title="Help" aria-label="Help">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+    </a>
+
+    <!-- Power -->
+    <div class="power-menu">
+      <button class="tb-icon-btn" onclick="togglePowerMenu()" title="Power" aria-label="Power">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v9"/>
+          <path d="M5.636 5.636a9 9 0 1 0 12.728 0"/>
+        </svg>
+      </button>
+      <div class="power-dropdown" id="power-dropdown">
+        <button onclick="powerAction('reboot')">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10"/>
+            <path d="M3.51 15a9 9 0 1 0 .49-3.51"/>
+          </svg>
+          Reboot
+        </button>
+        <button class="danger" onclick="powerAction('shutdown')">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v9"/><path d="M5.636 5.636a9 9 0 1 0 12.728 0"/>
+          </svg>
+          Shut Down
+        </button>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <iframe src="{{ mympd_url }}" id="mympd-frame"></iframe>
+
+  <div id="bt-source-curtain">
+    <div class="curtain-icon">&#9835;</div>
+    <div class="curtain-label" id="bt-curtain-label">Streaming from Bluetooth</div>
+    <div class="curtain-sub">mpd paused — audio is routed from the connected device</div>
+  </div>
+
+  <div id="mympd-reload-overlay">
+    <div class="reload-spinner"></div>
+    <span class="reload-label">Applying palette…</span>
+  </div>
+
+  {% if show_settings %}
+  <div id="settings-overlay" class="settings-overlay"
+       onclick="if (event.target === this) closeSettings()">
+    <div class="settings-panel-wrapper">
+      <div class="settings-panel">
+        <div class="settings-loading" id="settings-loading">
+          <div class="sl-spinner"></div>
+          <span class="sl-label">Loading…</span>
+        </div>
+        <iframe id="settings-frame" src="about:blank"></iframe>
+      </div>
+      <button class="settings-close" onclick="closeSettings()" aria-label="Close settings">&times;</button>
+    </div>
+  </div>
+  {% endif %}
+
+  <script src="{{ url_for('static', filename='palette.js') }}"></script>
+  <script>
+    const SHOW_SETTINGS = {{ 'true' if show_settings else 'false' }};
+    const INSTANCE_NAME = {{ config.instance_name|tojson }};
+
+    function openSettings(anchor) {
+      const overlay  = document.getElementById('settings-overlay');
+      if (!overlay) return;
+      const loading  = document.getElementById('settings-loading');
+      const frame    = document.getElementById('settings-frame');
+      loading.classList.remove('done');
+      frame.onload = () => { loading.classList.add('done'); frame.onload = null; };
+      frame.src = '/settings' + (anchor || '');
+      overlay.classList.add('active');
+    }
+
+    function closeSettings() {
+      const overlay = document.getElementById('settings-overlay');
+      if (!overlay) return;
+      try {
+        const frame = document.getElementById('settings-frame');
+        if (frame && frame.contentWindow && frame.contentWindow.revertAllCards) {
+          frame.contentWindow.revertAllCards();
+        }
+      } catch (e) {}
+      overlay.classList.remove('active');
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeSettings();
+    });
+
+    // ── BT/output status bubble ───────────────────────────────────
+    function refreshBtStatus() {
+      fetch('/api/outputs')
+        .then(r => r.json())
+        .then(d => {
+          const bubbleTxt = document.getElementById('output-bubble-text');
+          const curtain   = document.getElementById('bt-source-curtain');
+          const curtainLbl = document.getElementById('bt-curtain-label');
+
+          const src = d.connected_bt_source;
+          const showCurtain = d.bt_mode === 'target' && !!src;
+          if (curtain) curtain.classList.toggle('active', showCurtain);
+          if (showCurtain && curtainLbl) {
+            curtainLbl.textContent = 'Streaming from ' + (src.alias || src.name || 'Bluetooth');
+          }
+
+          if (!bubbleTxt) return;
+          if (d.bt_mode === 'off') {
+            bubbleTxt.textContent = 'Off';
+          } else if (d.bt_mode === 'target') {
+            bubbleTxt.textContent = src
+              ? 'target (' + (src.alias || src.name) + ')'
+              : 'target (not connected)';
+          } else {
+            const connected = (d.options || []).find(
+              o => o.kind === 'sink' && o.value.startsWith('bluez_output.')
+            );
+            bubbleTxt.textContent = connected
+              ? 'output (' + connected.label + ')'
+              : 'output (not connected)';
+          }
+        })
+        .catch(e => console.error('BT status refresh failed', e));
+    }
+    refreshBtStatus();
+    setInterval(refreshBtStatus, 10000);
+
+    // ── Clock ─────────────────────────────────────────────────────
+    function refreshClock() {
+      fetch('/api/time')
+        .then(r => r.json())
+        .then(d => {
+          const el = document.getElementById('clock');
+          document.getElementById('clock-text').textContent = d.time;
+          el.classList.toggle('maintenance', !!d.maintenance_active);
+        })
+        .catch(e => console.error('Clock refresh failed', e));
+    }
+    refreshClock();
+    setInterval(refreshClock, 30000);
+
+    // ── Power menu ────────────────────────────────────────────────
+    function togglePowerMenu() {
+      document.getElementById('power-dropdown').classList.toggle('active');
+    }
+    document.addEventListener('click', (e) => {
+      const menu = document.querySelector('.power-menu');
+      if (menu && !menu.contains(e.target)) {
+        document.getElementById('power-dropdown').classList.remove('active');
+      }
+    });
+
+    function powerAction(action) {
+      const label = action === 'reboot' ? 'Reboot' : 'Shut down';
+      const extra = action === 'shutdown'
+        ? ' This device has no power button — bringing it back requires unplugging and replugging it.'
+        : '';
+      if (!confirm(label + ' Zero-Fi now?' + extra)) return;
+      document.getElementById('power-dropdown').classList.remove('active');
+      fetch('/api/' + action, { method: 'POST' }).catch(e => console.error(label + ' failed', e));
+    }
+
+    // ── Palette changes from settings iframe ──────────────────────
+    // applyPaletteVars() itself lives in static/palette.js, shared with
+    // settings.html — see that file's header comment.
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'palette-changed') {
+        applyPaletteVars(e.data.palette);
+        reloadMyMPDWhenReady();
+      }
+      if (e.data && e.data.type === 'instance-name-changed') {
+        const name = e.data.instanceName || 'Zero-Fi';
+        const tb = document.querySelector('.brand-mark--tb');
+        if (tb) tb.textContent = name;
+        document.title = name;
+      }
+    });
+
+    function reloadMyMPDWhenReady() {
+      const frame   = document.getElementById('mympd-frame');
+      const overlay = document.getElementById('mympd-reload-overlay');
+      if (!frame) return;
+      overlay.classList.add('active');
+      const myMPDUrl = frame.src;
+      let attempts = 0;
+      const poll = setInterval(() => {
+        attempts++;
+        // mode:no-cors — we just need to know if the server accepts connections
+        fetch(myMPDUrl, { mode: 'no-cors', cache: 'no-store' })
+          .then(() => {
+            clearInterval(poll);
+            // Give myMPD a moment to finish initialising before reloading
+            setTimeout(() => {
+              frame.onload = () => { overlay.classList.remove('active'); frame.onload = null; };
+              frame.src = myMPDUrl;
+            }, 600);
+          })
+          .catch(() => {
+            if (attempts >= 40) {   // 20 s hard cap
+              clearInterval(poll);
+              frame.src = myMPDUrl;
+              overlay.classList.remove('active');
+            }
+          });
+      }, 500);
+    }
+  </script>
+</body>
+</html>

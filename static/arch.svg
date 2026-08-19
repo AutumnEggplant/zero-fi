@@ -1,0 +1,74 @@
+<svg viewBox="0 0 580 296" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .bg   { fill: #f4e8cc; }
+    .box  { fill: #faf3e4; stroke: rgba(92,42,10,0.22); stroke-width: 1; }
+    .box-hi { fill: #faf3e4; stroke: #5c2a0a; stroke-width: 1.5; }
+    .lbl  { fill: #5c2a0a; font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size: 12px; font-weight: 600; }
+    .sub  { fill: rgba(92,42,10,0.52); font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size: 10px; }
+    .arr      { stroke: #e8601a; stroke-width: 1.5; fill: none; }
+    .arr-dash { stroke: #e8601a; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+    @media (prefers-color-scheme: dark) {
+      .bg   { fill: #1e0e04; }
+      .box  { fill: #2a1408; stroke: rgba(244,232,204,0.18); }
+      .box-hi { fill: #2a1408; stroke: rgba(244,232,204,0.5); }
+      .lbl  { fill: #f4e8cc; }
+      .sub  { fill: rgba(244,232,204,0.52); }
+    }
+  </style>
+  <defs>
+    <marker id="a" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0,0.5 L6,3.5 L0,6.5 Z" fill="#e8601a"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="580" height="296"/>
+
+  <!-- WiFi AP ─── row 1: y=10, h=36 -->
+  <rect class="box-hi" x="165" y="10" width="250" height="36" rx="6"/>
+  <text class="lbl" x="290" y="32" text-anchor="middle">WiFi AP — hostapd + dnsmasq</text>
+
+  <!-- AP → Flask -->
+  <line class="arr" x1="290" y1="46" x2="290" y2="70" marker-end="url(#a)"/>
+
+  <!-- Flask ─── row 2: y=74, h=46 -->
+  <rect class="box-hi" x="50" y="74" width="480" height="46" rx="6"/>
+  <text class="lbl" x="290" y="95" text-anchor="middle">Flask — web toolbar + settings</text>
+  <text class="sub" x="290" y="109" text-anchor="middle">play/pause · volume · WiFi · Bluetooth · library sync</text>
+
+  <!-- Flask → services (row 2 bottom = y=120) -->
+  <line class="arr"      x1="130" y1="120" x2="72"  y2="156" marker-end="url(#a)"/>
+  <line class="arr"      x1="235" y1="120" x2="222" y2="156" marker-end="url(#a)"/>
+  <line class="arr"      x1="350" y1="120" x2="366" y2="156" marker-end="url(#a)"/>
+  <line class="arr-dash" x1="455" y1="120" x2="502" y2="156" marker-end="url(#a)"/>
+
+  <!-- Services ─── row 3: y=160, h=44 -->
+  <rect class="box" x="10"  y="160" width="122" height="44" rx="6"/>
+  <text class="lbl" x="71"  y="180" text-anchor="middle">mpd</text>
+  <text class="sub" x="71"  y="194" text-anchor="middle">local library</text>
+
+  <rect class="box" x="147" y="160" width="148" height="44" rx="6"/>
+  <text class="lbl" x="221" y="180" text-anchor="middle">shairport-sync</text>
+  <text class="sub" x="221" y="194" text-anchor="middle">AirPlay receiver</text>
+
+  <rect class="box" x="310" y="160" width="120" height="44" rx="6"/>
+  <text class="lbl" x="370" y="180" text-anchor="middle">bluez</text>
+  <text class="sub" x="370" y="194" text-anchor="middle">BT source / target</text>
+
+  <rect class="box" x="445" y="160" width="120" height="44" rx="6"/>
+  <text class="lbl" x="505" y="180" text-anchor="middle">NAS sync</text>
+  <text class="sub" x="505" y="194" text-anchor="middle">SMB → rsync</text>
+
+  <!-- Audio sources → PipeWire (row 3 bottom = y=204) -->
+  <line class="arr" x1="71"  y1="204" x2="172" y2="238" marker-end="url(#a)"/>
+  <line class="arr" x1="221" y1="204" x2="222" y2="238" marker-end="url(#a)"/>
+  <line class="arr" x1="370" y1="204" x2="272" y2="238" marker-end="url(#a)"/>
+
+  <!-- PipeWire ─── row 4: y=242, h=36 -->
+  <rect class="box-hi" x="100" y="242" width="300" height="36" rx="6"/>
+  <text class="lbl" x="250" y="262" text-anchor="middle">PipeWire / WirePlumber</text>
+  <text class="sub" x="250" y="272" text-anchor="middle">audio routing</text>
+
+  <!-- PipeWire → output -->
+  <line class="arr" x1="250" y1="278" x2="250" y2="286" marker-end="url(#a)"/>
+  <text class="sub" x="250" y="295" text-anchor="middle" style="font-size:11px">audio output (ALSA / Bluetooth)</text>
+</svg>

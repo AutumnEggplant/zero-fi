@@ -1,0 +1,3 @@
+# Dev tooling only — pip is never run on the device.
+# Flask is installed via apt (python3-flask) in the image build.
+flask>=3.0

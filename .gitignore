@@ -1,0 +1,16 @@
+data/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+# SSH keys — inject your own
+pi/root/root/.ssh/
+# Local flash-time config prefill — inject your own
+build/zerofi.json
+# Built images
+zerofi-*.img.xz
+zerofi-*.img
+# Build cache
+.cache/
+# Claude Code project settings (local only)
+.claude/

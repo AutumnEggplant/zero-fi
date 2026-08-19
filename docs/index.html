@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zero-Fi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Lobster&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='16' fill='%235c2a0a'/><text x='16' y='24' text-anchor='middle' font-size='22' font-family='Georgia' fill='%23f0c218'>&#9834;</text></svg>">
+  <style>
+    /* ── Palette ───────────────────────────────────────────────── */
+    :root {
+      --bg:    #f4e8cc;
+      --c1:    #5c2a0a;
+      --c2:    #e8601a;
+      --c3:    #f0c218;
+      --c4:    #9ccce8;
+      --card:  #faf3e4;
+      --text:  #2e1804;
+      --text2: rgba(46,24,4,0.58);
+      --text3: rgba(46,24,4,0.38);
+      --border:  rgba(92,42,10,0.14);
+      --border2: rgba(92,42,10,0.28);
+      --r: 10px;
+      --font-brand: 'Lobster', Georgia, cursive;
+      --font-ui:    'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono:  ui-monospace, 'Fira Code', monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:    #1e0e04;
+        --card:  #2a1408;
+        --text:  #f4e8cc;
+        --text2: rgba(244,232,204,0.58);
+        --text3: rgba(244,232,204,0.38);
+        --border:  rgba(244,232,204,0.12);
+        --border2: rgba(244,232,204,0.24);
+      }
+    }
+
+    /* ── Reset ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    a { color: var(--c2); }
+    a:hover { color: var(--c1); }
+    @media (prefers-color-scheme: dark) { a:hover { color: var(--c3); } }
+
+    /* ── Body + prism fan ──────────────────────────────────────── */
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 15px;
+      line-height: 1.6;
+      min-height: 100vh;
+      position: relative;
+    }
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 400px;
+      background: conic-gradient(from 0deg at 0% 100%,
+        var(--c1) 0deg 20deg,
+        var(--c2) 20deg 40deg,
+        var(--c3) 40deg 60deg,
+        var(--c4) 60deg 80deg);
+      clip-path: polygon(0 0, 100% 0, 100% 18%, 0 100%);
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ── Page layout ───────────────────────────────────────────── */
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 32px 24px 80px;
+    }
+
+    /* ── Hero ──────────────────────────────────────────────────── */
+    .hero {
+      padding: 32px 0 28px 8px;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .hero .note {
+      font-size: 64px;
+      color: var(--c1);
+      -webkit-text-stroke: 8px var(--c4);
+      paint-order: stroke fill;
+      line-height: 1;
+      font-family: Georgia, serif;
+    }
+    .hero .name {
+      font-family: var(--font-brand);
+      font-size: 40px;
+      color: var(--c1);
+      -webkit-text-stroke: 3px var(--bg);
+      paint-order: stroke fill;
+      line-height: 1;
+    }
+
+    /* ── Nav ───────────────────────────────────────────────────── */
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 16px;
+      padding-bottom: 32px;
+      padding-left: 4px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    nav a { color: var(--text2); text-decoration: none; }
+    nav a:hover { color: var(--c2); }
+
+    /* ── Section ───────────────────────────────────────────────── */
+    .section { margin-bottom: 40px; }
+    .section-label {
+      font-family: var(--font-brand);
+      font-size: 28px;
+      line-height: 1.1;
+      color: var(--c1);
+      -webkit-text-stroke: 2px var(--bg);
+      paint-order: stroke fill;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border2);
+      margin-bottom: 14px;
+    }
+
+    /* ── Card ──────────────────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 20px 22px;
+      margin-bottom: 12px;
+    }
+    .card h3 {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text3);
+      margin-bottom: 10px;
+    }
+    .card p + p { margin-top: 10px; }
+
+    /* ── Client table ──────────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text3);
+      padding: 0 12px 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 9px 12px 9px 0;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    td:last-child { color: var(--text2); font-size: 13px; }
+
+    /* ── Code ──────────────────────────────────────────────────── */
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.85em;
+      background: var(--border);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    /* ── Placeholder ───────────────────────────────────────────── */
+    .placeholder {
+      color: var(--text3);
+      font-style: italic;
+      border: 1px dashed var(--border2);
+      border-radius: var(--r);
+      padding: 32px 24px;
+      text-align: center;
+    }
+
+    /* ── Tag chips ─────────────────────────────────────────────── */
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 20px;
+      margin-right: 4px;
+      background: var(--border);
+      color: var(--text2);
+    }
+    .tag-c2 { background: rgba(232,96,26,0.12); color: var(--c2); }
+    .tag-c4 { background: rgba(156,204,232,0.18); color: #4888a8; }
+    @media (prefers-color-scheme: dark) {
+      .tag-c4 { color: var(--c4); }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <div class="hero">
+    <span class="note">♪</span>
+    <span class="name">Zero-Fi</span>
+  </div>
+
+  <nav>
+    <a href="#connecting">Connecting</a>
+    <a href="#playback">Playback</a>
+    <a href="#clients">MPD clients</a>
+    <a href="#bluetooth">Bluetooth</a>
+    <a href="#library">Library sync</a>
+    <a href="#curating">Curating</a>
+  </nav>
+
+  <!-- ── Connecting ─────────────────────────────────────────── -->
+  <section class="section" id="connecting">
+    <h2 class="section-label">Connecting</h2>
+    <div class="card">
+      <h3>Finding it on the network</h3>
+      <p>Zero-Fi broadcasts an open WiFi access point named <strong>Zero-Fi-XXXX</strong> by
+         default, where <code>XXXX</code> is derived from the device's WiFi MAC address —
+         rename it under Settings → Identity, which also renames the hostname, the AirPlay
+         name, and the Bluetooth name to match. Connect to it, then open
+         <code>http://&lt;that name&gt;.local</code> in a browser. If mDNS isn't working, the
+         AP's own gateway address, <code>http://192.168.4.1</code>, goes to the same place.
+         On most phones, tapping the "Sign in to network" prompt that pops up after
+         connecting takes you straight there too.</p>
+      <p>The web toolbar lets you play/pause, adjust volume, and switch Bluetooth mode.
+         The <strong>Settings</strong> link opens the full configuration page.</p>
+    </div>
+    <div class="card">
+      <h3>Joining your home network (optional)</h3>
+      <p>Settings → Network → Home WiFi. Enter your network credentials and save.
+         Zero-Fi will join as a client while keeping its access point running
+         (AP+STA mode). If it loses the connection and can't reconnect, the AP stays up —
+         you won't get locked out.</p>
+      <p>Once Zero-Fi has a real home-network connection, Settings becomes reachable only
+         from that network — opening it over the AP just bounces you back to the toolbar.
+         There's no setting to change this; it keeps an open guest AP from doubling as an
+         admin backdoor.</p>
+    </div>
+  </section>
+
+  <!-- ── Playback ───────────────────────────────────────────── -->
+  <section class="section" id="playback">
+    <h2 class="section-label">Playback</h2>
+    <div class="card">
+      <h3>AirPlay</h3>
+      <p>Zero-Fi appears in the AirPlay device list, under its configured name (Settings →
+         Identity), on any iPhone, iPad, or Mac on the same network. Select it from Control
+         Center or the Music app — audio routes to Zero-Fi immediately. Volume can be
+         adjusted from your device or from the Zero-Fi toolbar.</p>
+      <p>AirPlay and mpd playback are independent; AirPlay audio goes directly through
+         PipeWire and doesn't interact with the mpd queue.</p>
+    </div>
+    <div class="card">
+      <h3>myMPD (built-in web player)</h3>
+      <p>A full-featured mpd web client is bundled, embedded directly in the toolbar, and
+         also reachable on its own at port 8080 (<code>http://&lt;hostname&gt;:8080/</code>).
+         It handles browsing the library, managing the queue, playlists, and cover art.
+         Most people won't need a separate client app once the library is synced.</p>
+    </div>
+  </section>
+
+  <!-- ── MPD clients ────────────────────────────────────────── -->
+  <section class="section" id="clients">
+    <h2 class="section-label">MPD clients</h2>
+    <div class="card">
+      <h3>iOS</h3>
+      <table>
+        <tr><th>App</th><th>Notes</th></tr>
+        <tr><td><a href="https://apps.apple.com/app/canister/id1476114375">Canister</a></td><td>Album-art focused, free</td></tr>
+        <tr><td><a href="https://apps.apple.com/app/mpad-for-mpd/id1575901702">MPaD</a></td><td>Actively developed</td></tr>
+        <tr><td><a href="https://apps.apple.com/app/persephone/id1461882798">Persephone</a></td><td>Mac + iOS, minimal interface</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Android</h3>
+      <table>
+        <tr><th>App</th><th>Notes</th></tr>
+        <tr><td><a href="https://play.google.com/store/apps/details?id=com.namelessdev.mpdroid">MPDroid</a></td><td>Long-established</td></tr>
+        <tr><td><a href="https://play.google.com/store/apps/details?id=com.bork.music">M.A.L.P.</a></td><td>Material UI, actively maintained</td></tr>
+        <tr><td><a href="https://play.google.com/store/apps/details?id=io.github.tjg1.norilib">Symfonium</a></td><td>Premium (paid)</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Desktop</h3>
+      <table>
+        <tr><th>App</th><th>Notes</th></tr>
+        <tr><td><a href="https://rybczak.net/ncmpcpp/">ncmpcpp</a></td><td>Terminal-based (ncurses)</td></tr>
+        <tr><td><a href="https://invent.kde.org/multimedia/cantata">Cantata</a></td><td>Qt GUI; no longer maintained</td></tr>
+        <tr><td>mpc</td><td>CLI one-liners: <code>mpc -h &lt;hostname&gt; play</code></td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Connecting a client</h3>
+      <p>Point the client at Zero-Fi's hostname (or LAN address if you're on one), port
+         <code>6600</code>, no password. That's the standard mpd port — any mpd client
+         will work.</p>
+    </div>
+  </section>
+
+  <!-- ── Bluetooth ──────────────────────────────────────────── -->
+  <section class="section" id="bluetooth">
+    <h2 class="section-label">Bluetooth</h2>
+    <div class="card">
+      <h3>Two modes</h3>
+      <p>Zero-Fi operates Bluetooth in one of two modes, switchable from settings:</p>
+      <p><span class="tag tag-c2">Target</span> Your phone or laptop sends audio to
+         Zero-Fi — useful when you want to stream from a non-AirPlay app
+         (Spotify, podcasts, etc.) to the local speaker.</p>
+      <p><span class="tag tag-c4">Source</span> Zero-Fi sends its audio output to a
+         Bluetooth speaker or headphones — useful when the speaker you want to use
+         is Bluetooth-only.</p>
+    </div>
+    <div class="card">
+      <h3>Pairing (Target mode)</h3>
+      <p>Pair from <strong>your device's</strong> Bluetooth settings — find Zero-Fi (under
+         its configured name, see Settings → Identity) in the device list and pair
+         normally. Zero-Fi auto-accepts pairing requests when in Target mode. You don't
+         need to do anything in Zero-Fi's UI to initiate pairing.</p>
+      <p>Only one device plays at a time. A second device pairing will take over audio
+         from the first.  This part may take a couple of tries I'm afraid but it does
+         reset on failure fairly well so a re-try will work.</p>
+    </div>
+    <div class="card">
+      <h3>Pairing (Source mode)</h3>
+      <p>Go to Settings → Bluetooth. Put your speaker or headphones into pairing mode,
+         then tap <strong>Scan</strong> in Settings. Select the device from the list to pair
+         and connect. Zero-Fi will reconnect to that device automatically on next boot.</p>
+    </div>
+  </section>
+
+  <!-- ── Library sync ───────────────────────────────────────── -->
+  <section class="section" id="library">
+    <h2 class="section-label">Library sync</h2>
+    <div class="card">
+      <h3>Setup</h3>
+      <p>Go to Settings → Library → Sync. Fill in:</p>
+      <table>
+        <tr><th>Field</th><th>Example</th></tr>
+        <tr><td>Source path</td><td><code>//nas-host/share/path/to/library</code></td></tr>
+        <tr><td>Username / Password</td><td>Your NAS credentials (leave blank for guest)</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Running a sync</h3>
+      <p>Go to Settings → Library → Sync and hit <strong>Sync Now</strong>. Zero-Fi mounts
+         the share over SMB and copies new files to the music partition. Progress is shown
+         in that card while running. Be especially aware that no sync jobs process while
+         music is playing.</p>
+      <p>When sync is enabled and a source is configured, Zero-Fi also runs a sync
+         automatically once a day (around midnight). If the device was off at midnight, it
+         catches up on the next boot. The automatic run requires a WiFi client connection to
+         the home network — it won't attempt to reach the source over the AP-only interface.</p>
+      <p>mpd rescans after sync completes — new tracks are available in the library shortly
+         after.</p>
+      <p>Do <strong>NOT</strong> use a NAS account you care about btw!  It's going to be a little
+         too exposed on a device that fails public!  Read only, scoped to the collection please.
+	 Or, you can always just put the card into a card reader and transfer directly; the music
+	 partition should be visible and labeled on nearly any computer.
+    </div>
+    <div class="card">
+      <h3>Updating the mpd database</h3>
+      <p>After copying music directly to the card (or on first boot with pre-loaded files),
+         mpd won't see the new tracks until its database is updated. Open myMPD (see
+         <a href="#playback">Playback</a> above), go to <strong>Database</strong> in the
+         myMPD menu, and tap <strong>Update</strong>. It scans for changes without
+         interrupting playback.</p>
+      <p>Library sync handles this automatically — manual update is only needed when
+         files are added outside of a sync.</p>
+    </div>
+    <div class="card">
+      <h3>How sync works</h3>
+      <p>Sync is a multi-phase pipeline, not a single file transfer. Hitting
+         <strong>Sync Now</strong> (or the daily timer firing) runs discovery first: it
+         walks the SMB source and creates one <em>qualify</em> job per album directory.
+         The sync worker then processes jobs in priority order:</p>
+      <ol>
+        <li><strong>Qualify</strong> — lists the remote files in a directory and
+            emits one <em>compare</em> job for the directory.</li>
+        <li><strong>Compare</strong> — a file missing locally always emits a
+            <em>sync</em> job. A file that already exists locally is otherwise left
+            alone, unless <strong>"Check existing files for changes"</strong> is turned
+            on in the Sync card (off by default) — then it's also re-probed against the
+            source and re-synced if it differs. See below for what that check does.</li>
+        <li><strong>Sync</strong> — copies the file from the SMB share to the music
+            partition. New files are queued ahead of re-synced updates, so a fresh
+            album doesn't wait behind a backlog of re-checks.</li>
+        <li><strong>Prune</strong> — the pipeline can remove local files that were
+            deleted from the source and clean up any directories that become empty,
+            but this isn't currently exposed as a setting, so it doesn't run today.</li>
+      </ol>
+      <p>The queue lives in <code>/run</code> (a tmpfs) and evaporates on reboot —
+         a sync interrupted by a power cycle or reboot just needs to be re-triggered.
+         The progress display in the Sync card shows live per-phase counts.</p>
+      <p>Jobs deduplicate on dequeue: if the same directory queued twice (e.g. you
+         hit Sync Now again mid-run), the duplicate is silently discarded when the first
+         copy is picked up.</p>
+      <p>The sync worker stops between batches whenever music starts playing and
+         resumes when it stops. Syncing on a Pi Zero W while playing audio is enough
+         to cause skips — the gate keeps things clean without requiring you to think
+         about it.</p>
+      <p>When "Check existing files for changes" is on, the comparison reads only the
+         first 64 KB of each file (remote and local) to get its duration and tags,
+         rather than hashing or fully reading it — enough to catch a retag or a
+         re-encode without touching audio content. It's still two subprocess calls per
+         file on the Zero W's single weak core, which adds up over a large library —
+         that's why it's opt-in. Music files change rarely; turn this on after you've
+         retagged or otherwise edited files already on the device, then leave it off
+         the rest of the time.</p>
+    </div>
+    <div class="card">
+      <h3>Supported formats</h3>
+      <p>Anything mpd handles: MP3, FLAC, AAC, OGG Vorbis, Opus, WAV, AIFF, and more.
+         Cover art embedded in files or as <code>cover.jpg</code> / <code>folder.jpg</code>
+         alongside tracks is picked up automatically by myMPD.</p>
+    </div>
+  </section>
+
+
+  <!-- ── Curating ───────────────────────────────────────────── -->
+  <section class="section" id="curating">
+    <h2 class="section-label">Curating your library</h2>
+    <div class="card">
+      <h3>Artwork &amp; metadata — beets</h3>
+      <p><a href="https://beets.io">beets</a> is a great tool for keeping a local
+         collection tidy. It matches your files against MusicBrainz, corrects tags, renames
+         files consistently, and — most usefully for Zero-Fi — fetches and embeds album art.
+         myMPD picks up embedded artwork automatically, so a beets-organized library just
+         looks right.</p>
+      <p>The <code>fetchart</code> and <code>embedart</code> plugins are the ones that get
+         cover images embedded into every file — see beets'
+         <a href="https://beets.readthedocs.io/en/stable/guides/main.html">getting started
+         guide</a> for installation and setup.</p>
+    </div>
+    <div class="card">
+      <h3>Volume normalization — ReplayGain</h3>
+      <p>mpd has built-in ReplayGain support (set to <em>auto</em> by default on Zero-Fi),
+         but it only works if your files are tagged with gain values. beets handles this
+         too via its <code>replaygain</code> plugin — run <code>beet replaygain</code> after
+         import and you're done. Alternatively, <code>loudgain</code> is a fast standalone
+         tagger if you prefer something outside beets.</p>
+      <p>Once tagged, tracks from wildly different sources (CD rips, vinyl digitizations,
+         YouTube downloads) all play back at a consistent level without touching the volume
+         knob.</p>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
