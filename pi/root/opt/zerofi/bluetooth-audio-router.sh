@@ -149,7 +149,14 @@ while True:
     ok = True
     for src_id, dst_id in channel_pairs(src_ports, dst_ports):
         result = subprocess.run(["pw-link", str(src_id), str(dst_id)], capture_output=True, text=True)
-        if result.returncode != 0:
+        # "File exists" means the link is already there — almost always
+        # WirePlumber auto-connecting the node before this poll even ran.
+        # That's success, not failure: treating it as failure meant
+        # current_source_name never advanced below, so this branch retried
+        # forever every POLL_INTERVAL, hammering pw-link and PipeWire
+        # continuously and never converging — a real, observed source of
+        # churn on hardware this slow, not just a log spam cosmetic issue.
+        if result.returncode != 0 and "File exists" not in result.stderr:
             log(f"pw-link {src_id} -> {dst_id} failed: {result.stderr.strip()}")
             ok = False
     if ok:

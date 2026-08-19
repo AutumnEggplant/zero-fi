@@ -338,7 +338,7 @@
   <div id="bt-source-curtain">
     <div class="curtain-icon">&#9835;</div>
     <div class="curtain-label" id="bt-curtain-label">Streaming from Bluetooth</div>
-    <div class="curtain-sub">mpd paused — audio is routed from the connected device</div>
+    <div class="curtain-sub">mpd is paused while Target mode is active</div>
   </div>
 
   <div id="mympd-reload-overlay">
@@ -388,6 +388,28 @@
         }
       } catch (e) {}
       overlay.classList.remove('active');
+      reconcileAbandonedBtSource();
+    }
+
+    function reconcileAbandonedBtSource() {
+      // Picking "Output to device" without ever completing a connection,
+      // then closing Settings, leaves bt_mode stuck on "source" with
+      // nothing connected — an illogical state that does nothing and looks
+      // broken. Only check here, on close, not while Settings is open —
+      // mid-scan/mid-pair is the exact same transient state, legitimately.
+      fetch('/api/outputs')
+        .then(r => r.json())
+        .then(d => {
+          if (d.bt_mode !== 'source') return;
+          const connected = (d.options || []).find(
+            o => o.kind === 'sink' && o.value.startsWith('bluez_output.')
+          );
+          if (connected) return;
+          return fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ bt_mode: 'off' }) });
+        })
+        .then(() => refreshBtStatus())
+        .catch(e => console.error('BT mode reconcile failed', e));
     }
 
     window.addEventListener('keydown', (e) => {
@@ -403,11 +425,19 @@
           const curtain   = document.getElementById('bt-source-curtain');
           const curtainLbl = document.getElementById('bt-curtain-label');
 
+          // Target mode is output-only by definition — the curtain (and the
+          // mpd stop behind it) reflects the *mode*, not whether a phone
+          // happens to be connected right now. Gating this on
+          // connected_bt_source was the actual bug: switching to Target did
+          // nothing on its own, since nothing ever fired until some phone
+          // eventually connected.
           const src = d.connected_bt_source;
-          const showCurtain = d.bt_mode === 'target' && !!src;
+          const showCurtain = d.bt_mode === 'target';
           if (curtain) curtain.classList.toggle('active', showCurtain);
           if (showCurtain && curtainLbl) {
-            curtainLbl.textContent = 'Streaming from ' + (src.alias || src.name || 'Bluetooth');
+            curtainLbl.textContent = src
+              ? 'Streaming from ' + (src.alias || src.name || 'Bluetooth')
+              : 'Waiting for a device to connect';
           }
 
           if (!bubbleTxt) return;
@@ -429,7 +459,13 @@
         .catch(e => console.error('BT status refresh failed', e));
     }
     refreshBtStatus();
-    setInterval(refreshBtStatus, 10000);
+    // The mpd-pause/curtain side effect itself is now instant (bluetooth-agent.sh
+    // nudges /api/internal/bt-source-changed the moment the real BlueZ event fires
+    // — see that endpoint's docstring), but this browser tab only *learns* about it
+    // by polling — there's no server-push channel to a page, only iframe postMessage
+    // for actions this tab itself initiated. 3s keeps the curtain feeling immediate
+    // without being a meaningful request-rate concern on a single always-on device.
+    setInterval(refreshBtStatus, 3000);
 
     // ── Clock ─────────────────────────────────────────────────────
     function refreshClock() {
@@ -479,6 +515,12 @@
         const tb = document.querySelector('.brand-mark--tb');
         if (tb) tb.textContent = name;
         document.title = name;
+      }
+      if (e.data && e.data.type === 'bt-status-changed') {
+        // Otherwise the output bubble/curtain only catches up on the next
+        // 10s poll — stale for however long the settings panel stays open
+        // after a pair/connect/disconnect/mode change.
+        refreshBtStatus();
       }
     });
 

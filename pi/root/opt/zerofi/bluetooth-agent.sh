@@ -6,10 +6,18 @@
 # "pairs, then immediately disconnects" with "Access denied: org.bluez.Error.Rejected"
 # in the bluetoothd log.
 #
-# Source-mode rejection: app.py's apply_bt_mode() untrusts phones when entering
-# Source mode, so only a trusted speaker reconnects silently (bypasses AuthorizeService
-# entirely). Any device that reaches AuthorizeService while in Source mode is an
-# untrusted former-phone — reject unconditionally, no per-device MAC check needed.
+# Only Target mode authorizes inbound connections — Off must actually block
+# them, not just skip pausing mpd for them (an untrusted phone, or a stray
+# auto-reconnect, could otherwise land while Off and mix into playback with
+# nothing gating or even detecting it, since the mode-transition cleanup in
+# app.py's apply_bt_mode()/_restrict_bt_trust_to_sinks() only runs on a mode
+# *change*, not continuously). Source and Off share the same reject path:
+# app.py's apply_bt_mode() untrusts phones when entering either one, so only
+# a trusted speaker reconnects silently in Source mode (bypasses
+# AuthorizeService entirely). Any device that reaches AuthorizeService
+# outside Target mode is either an untrusted former-phone or an unwanted
+# connection attempt while Off — reject unconditionally, no per-device MAC
+# check needed.
 
 set -uo pipefail
 
@@ -59,10 +67,10 @@ bluetoothctl < "$FIFO" 2>&1 | while IFS= read -r line; do
     echo "[bt-agent] $line"
     case "$line" in
         *"Authorize service"*)
-            if [[ "$(current_bt_mode)" == "source" ]]; then
-                echo "no" > "$FIFO"
-            else
+            if [[ "$(current_bt_mode)" == "target" ]]; then
                 echo "yes" > "$FIFO"
+            else
+                echo "no" > "$FIFO"
             fi
             ;;
         *"Confirm passkey"*|*"[agent] Confirm"*|*"Authorize"*)
@@ -93,6 +101,15 @@ bluetoothctl < "$FIFO" 2>&1 | while IFS= read -r line; do
             # which also fires before auth fails) — clearest signal to clear auth_fail_count
             mac=$(echo "$line" | grep -oE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}')
             [[ -n "$mac" ]] && unset "auth_fail_count[$mac]"
+            # Nudge app.py to react (mpd pause, myMPD curtain) right now
+            # instead of waiting for the toolbar's next /api/outputs poll
+            # (up to 10s) to notice the same thing on its own.
+            curl -s -m 3 -X POST http://127.0.0.1/api/internal/bt-source-changed >/dev/null 2>&1 &
+            ;;
+        *"Connected: no"*)
+            # Same nudge on disconnect — clears the pause/curtain promptly
+            # instead of leaving it up until the next poll.
+            curl -s -m 3 -X POST http://127.0.0.1/api/internal/bt-source-changed >/dev/null 2>&1 &
             ;;
         *"auth failed with status"*)
             mac=$(echo "$line" | grep -oE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}')

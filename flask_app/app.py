@@ -904,11 +904,20 @@ def get_connected_bt_device():
 
 
 def get_connected_bt_source():
-    """Which known device is actively streaming TO this box right now.
+    """Which device is actively streaming TO this box right now.
 
     A bluez_input.* node sits in `state: suspended` until something links to
     its output ports — gating on state == "running" means this never shows as
-    connected even while a phone is actively streaming."""
+    connected even while a phone is actively streaming.
+
+    Target mode accepts a connection from any phone, not just ones the user
+    has explicitly paired through the Source-mode /api/bt/pair flow (the only
+    writer of known_devices) — bluetooth-agent.sh trusts them directly via
+    bluetoothctl, with no Flask/known_devices involvement. Requiring a
+    known_devices match here meant an ordinary Target-mode phone connection
+    was invisible to this function, which silently broke both the mpd-pause
+    (_handle_bt_source_connect) and myMPD curtain (connected_bt_source in
+    /api/outputs) — both of which are keyed entirely off this return value."""
     known = load_known_devices()
     for obj in pw_dump():
         if obj.get("type") != "PipeWire:Interface:Node":
@@ -917,7 +926,18 @@ def get_connected_bt_source():
         name = info.get("props", {}).get("node.name", "")
         if name.startswith("bluez_input."):
             mac = name.split(".")[1].replace("_", ":").upper()
-            return next((d for d in known if d["mac"].upper() == mac), None)
+            dev = next((d for d in known if d["mac"].upper() == mac), None)
+            if dev:
+                return dev
+            display_name = mac
+            if not _DEV:
+                result = subprocess.run(["bluetoothctl", "info", mac],
+                                         capture_output=True, text=True, timeout=5)
+                for line in result.stdout.split("\n"):
+                    if "Name:" in line:
+                        display_name = line.split("Name:")[1].strip()
+                        break
+            return {"name": display_name, "mac": mac, "alias": display_name}
     return None
 
 
@@ -1313,26 +1333,59 @@ def apply_airplay_enabled(enabled):
     _toggle_service("shairport-sync", enabled)
 
 
+def apply_ntp_enabled(enabled):
+    _toggle_service("systemd-timesyncd.service", enabled)
+
+
+def _bt_run(args, timeout=5):
+    """subprocess.run wrapper for bluetoothctl calls in the mode/trust cluster
+    below that must never crash the request they're part of. On a Pi Zero W
+    under BT churn (rapid connect/disconnect/untrust cycles — this hardware
+    is slow enough that it's a real, observed occurrence, not just
+    theoretical) bluetoothctl can genuinely miss its timeout. Every caller
+    here already treats "command didn't confirm" as a WARNING to log and
+    move on from, not a crash — this makes that true for timeouts too,
+    instead of leaving them as an uncaught subprocess.TimeoutExpired that
+    takes the whole request down with a 500."""
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except Exception as e:
+        print(f"WARNING: {' '.join(args)} failed: {e}", flush=True)
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="")
+
+
 def _bt_device_is_sink(mac):
-    """Is this a real audio sink (speaker/headphones) rather than an audio
-    source (phone)? Real speakers advertise "Audio Sink" UUID (0000110b);
-    a phone streamed to us in Target mode advertises "Audio Source" instead."""
+    """Does this device advertise audio-sink capability (speaker/headphones)?
+    Real speakers advertise "Audio Sink" UUID (0000110b). This is a capability
+    check, not a live-role check — a device can advertise more than this and
+    still be a legitimate speaker (e.g. many earbuds also advertise Handsfree
+    for their mic channel; an earlier version of this function's caller tried
+    to additionally exclude "currently active as a source right now" for
+    exactly this kind of dual-profile device, which broke Source-mode
+    reconnects for any real speaker with a mic — see _restrict_bt_trust_to_sinks).
+    """
     if _DEV:
         return False
-    result = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True, timeout=5)
+    result = _bt_run(["bluetoothctl", "info", mac])
     return "Audio Sink" in result.stdout
 
 
 def _restrict_bt_trust_to_sinks():
-    """Entering Source mode: untrust anything that isn't an audio sink so any
-    future reconnect attempt has to go through the agent, which rejects it while
-    in Source mode. A Trusted device bypasses AuthorizeService entirely on
-    reconnect — discoverable/pairable off only gates new pairing, not reconnects
-    from already-bonded devices. Untrust (not unpair) — still shown in Settings,
-    still manually connectable as an output."""
+    """Leaving Target mode (into Source or Off): untrust anything that isn't
+    an audio sink so any future reconnect attempt has to go through the
+    agent, which rejects it outside Target mode. A Trusted device bypasses
+    AuthorizeService entirely on reconnect — discoverable/pairable off only
+    gates new pairing, not reconnects from already-bonded devices. Untrust
+    (not unpair) — still shown in Settings, still manually connectable as an
+    output.
+
+    Off mode doesn't lean on this for its actual guarantee anymore — see
+    apply_bt_mode's power-off. This still runs for Off too (harmless, and
+    keeps trust state consistent if the radio ever gets powered back on
+    out-of-band), but Source mode is where it's load-bearing."""
     if _DEV:
         return
-    result = subprocess.run(["bluetoothctl", "devices", "Trusted"], capture_output=True, text=True, timeout=10)
+    result = _bt_run(["bluetoothctl", "devices", "Trusted"], timeout=10)
     for line in result.stdout.splitlines():
         parts = line.split(maxsplit=2)
         if len(parts) < 2 or parts[0] != "Device":
@@ -1342,9 +1395,9 @@ def _restrict_bt_trust_to_sinks():
             # retried and read back — this is the actual security boundary for
             # Source mode; a device not confirmed untrusted can still reconnect
             for _ in range(3):
-                subprocess.run(["bluetoothctl", "untrust", mac], capture_output=True, timeout=5)
-                subprocess.run(["bluetoothctl", "disconnect", mac], capture_output=True, timeout=5)
-                info = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True, timeout=5)
+                _bt_run(["bluetoothctl", "untrust", mac])
+                _bt_run(["bluetoothctl", "disconnect", mac])
+                info = _bt_run(["bluetoothctl", "info", mac])
                 if "Trusted: no" in info.stdout:
                     break
                 time.sleep(1)
@@ -1353,16 +1406,18 @@ def _restrict_bt_trust_to_sinks():
                       "it may still be able to silently reconnect in Source mode", flush=True)
 
 
-def _bt_set_flag(flag, value, tries=5, interval=1):
+def _bt_set_flag(flag, value, tries=5, interval=1, label=None):
     """Set a bluetoothctl boolean adapter flag and verify it took — retrying
-    the command itself, not just re-checking."""
+    the command itself, not just re-checking. label overrides the `show`
+    status-line prefix when it doesn't match flag.capitalize() (e.g. command
+    "power" reports as "Powered:")."""
     if _DEV:
         return True
     want = "yes" if value else "no"
-    label = flag.capitalize() + ":"
+    label = (label or flag.capitalize()) + ":"
     for _ in range(tries):
-        subprocess.run(["bluetoothctl", flag, "on" if value else "off"], capture_output=True, timeout=5)
-        result = subprocess.run(["bluetoothctl", "show"], capture_output=True, text=True, timeout=5)
+        _bt_run(["bluetoothctl", flag, "on" if value else "off"])
+        result = _bt_run(["bluetoothctl", "show"])
         for line in result.stdout.splitlines():
             line = line.strip()
             if line.startswith(label):
@@ -1374,26 +1429,68 @@ def _bt_set_flag(flag, value, tries=5, interval=1):
 
 
 def apply_bt_mode(mode):
-    """Configure the radio as Source (connect out to speaker) or Target (be a speaker).
+    """Configure the radio as Source (connect out to speaker), Target (be a
+    speaker), or Off.
 
     bluetoothd defaults are Discoverable=no / Pairable=no — Target mode requires
     explicitly enabling both, plus discoverable-timeout 0 so it stays visible
     permanently rather than reverting after BlueZ's default 180s.
 
-    zerofi-bt-agent.service is not toggled here — it runs in both modes
+    Off powers the adapter down entirely, rather than relying on
+    Discoverable/Pairable=no plus untrusting non-sinks. Those only gate *new*
+    pairing/authorization — a device already Trusted (e.g. from an earlier
+    Target-mode session) reconnects silently, bypassing AuthorizeService and
+    every check downstream of it entirely, by BlueZ's own design. Untrusting
+    it closes that door for the future, but can't retroactively stop a
+    connection that's already trusted; only not having a powered radio to
+    connect to can. So Off must mean the radio isn't listening, full stop,
+    not "untrusted and hoping nothing already-bonded reconnects."
+
+    zerofi-bt-agent.service is not toggled here — it runs in all three modes
     (it enforces Source-mode rejection, not just Target-mode auto-trust) so
     it's enabled unconditionally at build time."""
     if _DEV:
         return
     target = (mode == "target")
+    if target:
+        # Target mode means Zero-Fi is output-only: it waits for and plays
+        # whatever a connected phone streams, never its own library — so
+        # entering the mode itself must stop mpd, unconditionally, whether
+        # or not anything ever connects. This must not be tied to a
+        # connection event (that was the actual bug: pause/curtain were both
+        # keyed off a bluez_input node appearing, so switching to Target did
+        # nothing on its own — sometimes minutes passed before a connection
+        # made it look like it worked, sometimes it never did at all).
+        subprocess.run(["mpc", "-h", "/run/mpd/socket", "stop"], capture_output=True, timeout=5)
     with bt_locked():
-        subprocess.run(["bluetoothctl", "discoverable-timeout", "0"], capture_output=True, timeout=5)
+        # Power on first (cleanup below needs a live radio) even if we're
+        # about to power back off for "off" — bluetoothctl commands against
+        # an already-off adapter are unreliable.
+        if not _bt_set_flag("power", True, label="Powered"):
+            print("WARNING: bluetoothctl power on never confirmed", flush=True)
+        _bt_run(["bluetoothctl", "discoverable-timeout", "0"])
         if not _bt_set_flag("discoverable", target):
             print(f"WARNING: bluetoothctl discoverable never confirmed {'on' if target else 'off'}", flush=True)
         if not _bt_set_flag("pairable", target):
             print(f"WARNING: bluetoothctl pairable never confirmed {'on' if target else 'off'}", flush=True)
         if not target:
             _restrict_bt_trust_to_sinks()
+        if mode == "off":
+            # Kill any live audio transport and let it actually settle before
+            # touching the radio's power state. WiFi and Bluetooth share one
+            # SDIO bus on this chip (BCM43430A1) — powering the BT radio off
+            # while it still has an active A2DP transport streaming is what
+            # preceded a full hard hang + hardware-watchdog reboot during
+            # testing. _restrict_bt_trust_to_sinks above already disconnects
+            # any trusted non-sink device, but that's incidental to
+            # untrusting it, not a guarantee the transport had time to
+            # actually tear down before power gets cut moments later.
+            source = get_connected_bt_source()
+            if source:
+                _bt_run(["bluetoothctl", "disconnect", source["mac"]], timeout=10)
+            time.sleep(2)
+            if not _bt_set_flag("power", False, label="Powered"):
+                print("WARNING: bluetoothctl power off never confirmed", flush=True)
     _toggle_service("zerofi-bt-audio.service", target)
     if target or mode == "off":
         # Target/Off: must output to a real physical sink, not a BT/AirPlay hop.
@@ -1508,6 +1605,8 @@ def save_config_api():
         apply_ssh_enabled(cfg.get("ssh_enabled", False))
     if "airplay_enabled" in data:
         apply_airplay_enabled(cfg.get("airplay_enabled", True))
+    if "ntp_enabled" in data:
+        apply_ntp_enabled(cfg.get("ntp_enabled", True))
     if "bt_mode" in data:
         apply_bt_mode(cfg.get("bt_mode", "target"))
     if "palette" in data:
@@ -1550,6 +1649,21 @@ def wlan0_has_lan_api():
     subnet-exclusion rules in Bash. See _wlan0_has_lan(). lan_only still
     lets 127.0.0.1 through — see _is_from_ap()."""
     return jsonify({"has_lan": _wlan0_has_lan()})
+
+
+@app.route("/api/internal/bt-source-changed", methods=["POST"])
+@lan_only
+def bt_source_changed_api():
+    """bluetooth-agent.sh's live event stream sees a Target-mode source
+    connect/disconnect the instant it happens — nudge here rather than
+    waiting for the toolbar's next /api/outputs poll (up to 10s away) to
+    stumble onto the same state and run the same check. Same effect either
+    way (get_connected_bt_source + _handle_bt_source_connect is exactly
+    what /api/outputs already runs each time), just not stalled behind a
+    poll interval for something that has an actual real-time signal
+    available. lan_only still lets 127.0.0.1 through — see _is_from_ap()."""
+    _handle_bt_source_connect(get_connected_bt_source())
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/wifi/status", methods=["GET"])
@@ -2134,6 +2248,10 @@ if __name__ == "__main__":
         apply_airplay_enabled(cfg.get("airplay_enabled", False))
     except Exception as e:
         print(f"WARNING: apply_airplay_enabled failed at boot: {e}", flush=True)
+    try:
+        apply_ntp_enabled(cfg.get("ntp_enabled", True))
+    except Exception as e:
+        print(f"WARNING: apply_ntp_enabled failed at boot: {e}", flush=True)
     try:
         apply_log_export(cfg.get("log_export", ""))
     except Exception as e:

@@ -235,7 +235,7 @@ fi
 # that should be running and stops services that should not be.
 ZEROFI_CONFIG=/mnt/music/zerofi.json
 if [[ -f "$ZEROFI_CONFIG" ]]; then
-    read -r _AP_EN _WIFI_EN _SSH_EN _AIRPLAY_EN < <(
+    read -r _AP_EN _WIFI_EN _SSH_EN _AIRPLAY_EN _NTP_EN < <(
         python3 -c "
 import json, sys
 try:
@@ -245,6 +245,7 @@ try:
         str(c.get('wifi_client_enabled', False)).lower(),
         str(c.get('ssh_enabled', False)).lower(),
         str(c.get('airplay_enabled', False)).lower(),
+        str(c.get('ntp_enabled', True)).lower(),
     )
 except Exception:
     sys.exit(1)
@@ -301,6 +302,17 @@ except Exception:
         elif systemctl is-active --quiet shairport-sync.service 2>/dev/null; then
             echo "  WARNING: shairport-sync active but airplay_enabled=false — stopping."
             systemctl disable --now shairport-sync.service 2>/dev/null || true
+        fi
+
+        # Time sync (NTP)
+        if [[ "$_NTP_EN" == "true" ]]; then
+            if ! systemctl is-active --quiet systemd-timesyncd.service 2>/dev/null; then
+                echo "  WARNING: systemd-timesyncd inactive but ntp_enabled=true — starting."
+                systemctl start systemd-timesyncd.service 2>/dev/null || true
+            fi
+        elif systemctl is-active --quiet systemd-timesyncd.service 2>/dev/null; then
+            echo "  WARNING: systemd-timesyncd active but ntp_enabled=false — stopping."
+            systemctl disable --now systemd-timesyncd.service 2>/dev/null || true
         fi
     fi
 fi

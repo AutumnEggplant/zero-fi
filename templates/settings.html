@@ -616,6 +616,7 @@
     <div class="section-label">Bluetooth</div>
 
     <div class="card" id="card-bt">
+      <div class="card-spinner-overlay"><div class="spinner"></div></div>
       <div class="card-header">
         <h2>Mode</h2>
       </div>
@@ -676,7 +677,8 @@
           <label>Known Outputs</label>
           <div id="bt-known-list">
             {% for d in known_devices %}
-            <div class="bt-row">
+            <div class="bt-row" data-mac="{{ d.mac|upper }}"
+                 style="{% if connected_bt and connected_bt.mac|upper == d.mac|upper %}display:none;{% endif %}">
               <span class="bt-row-name">
                 {{ d.alias }}
                 <span class="bt-row-role">({{ d.role }})</span>
@@ -961,9 +963,17 @@
     document.getElementById('bt-connected-alias').textContent = alias;
     document.getElementById('bt-disconnect-btn').setAttribute('onclick', "btDisconnect('" + mac + "', this)");
     document.getElementById('bt-connected-section').style.display = '';
+    // The connected device shouldn't also sit in Known Outputs offering a
+    // redundant "Connect" — hide just its row there (and un-hide whichever
+    // was hidden before, in case this is a switch from one known device to
+    // another rather than a fresh connect).
+    document.querySelectorAll('#bt-known-list .bt-row').forEach(row => {
+      row.style.display = (row.dataset.mac === mac.toUpperCase()) ? 'none' : '';
+    });
   }
   function showBtDisconnected() {
     document.getElementById('bt-connected-section').style.display = 'none';
+    document.querySelectorAll('#bt-known-list .bt-row').forEach(row => { row.style.display = ''; });
   }
 
   function btScan(btn) {
@@ -1004,7 +1014,12 @@
       .then(r => r.json())
       .then(d => {
         btUnlockCard();
-        if (d.status === 'ok') { btCardFlash('Paired with ' + d.name, 'success'); showBtConnected(d.alias, d.mac); }
+        if (d.status === 'ok') {
+          btCardFlash('Paired with ' + d.name, 'success');
+          showBtConnected(d.alias, d.mac);
+          document.getElementById('bt-scan-results').textContent = '';
+          window.parent.postMessage({ type: 'bt-status-changed' }, '*');
+        }
         else { clearBusy(btn); btCardFlash(d.error || 'Pairing failed', 'error'); }
       })
       .catch(() => { btUnlockCard(); clearBusy(btn); btCardFlash('Pairing failed', 'error'); });
@@ -1018,7 +1033,16 @@
       .then(r => r.json())
       .then(d => {
         btUnlockCard();
-        if (d.status === 'ok') { btCardFlash('Connected', 'success'); showBtConnected(d.alias, d.mac); }
+        if (d.status === 'ok') {
+          // Unlike btPair (whose scan-results row gets cleared entirely),
+          // the Known Outputs row this button lives in stays on screen —
+          // it must actually revert to its normal label, not just get
+          // re-enabled while still reading "Connecting…".
+          clearBusy(btn);
+          btCardFlash('Connected', 'success');
+          showBtConnected(d.alias, d.mac);
+          window.parent.postMessage({ type: 'bt-status-changed' }, '*');
+        }
         else { clearBusy(btn); btCardFlash(d.error || 'Connect failed', 'error'); }
       })
       .catch(() => { btUnlockCard(); clearBusy(btn); btCardFlash('Connect failed', 'error'); });
@@ -1032,7 +1056,13 @@
       .then(r => r.json())
       .then(d => {
         btUnlockCard();
-        if (d.status === 'ok') { btCardFlash('Disconnected', 'success'); showBtDisconnected(); }
+        if (d.status === 'ok') {
+          btCardFlash('Disconnected', 'success');
+          showBtDisconnected();
+          // Source mode with nothing connected isn't a real state to sit in —
+          // flip back to Off rather than leave the radio staged to reconnect.
+          setBtMode('off');
+        }
         else { clearBusy(btn); btCardFlash(d.error || 'Disconnect failed', 'error'); }
       })
       .catch(() => { btUnlockCard(); clearBusy(btn); btCardFlash('Disconnect failed', 'error'); });
@@ -1050,6 +1080,12 @@
 
   function setBtMode(mode) {
     document.querySelectorAll('input[name="bt_mode"]').forEach(r => r.disabled = true);
+    // apply_bt_mode() on the server can take several seconds (adapter
+    // power-cycle + discoverable/pairable retries) — the grayed-out radios
+    // alone don't hint at a delay that long, so also show the same
+    // full-card spinner the other settings cards already use while saving.
+    const card = document.getElementById('card-bt');
+    if (card) card.classList.add('saving');
     fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({bt_mode: mode}) })
       .then(r => r.json())
@@ -1061,6 +1097,7 @@
         if (d.status === 'ok') {
           const sourceBlock = document.getElementById('bt-source-block');
           if (sourceBlock) sourceBlock.style.display = mode === 'source' ? '' : 'none';
+          window.parent.postMessage({ type: 'bt-status-changed' }, '*');
         } else {
           btCardFlash(d.error || 'Failed to switch Bluetooth mode', 'error');
         }
@@ -1068,7 +1105,8 @@
       .catch(() => {
         btCardFlash('Failed to switch Bluetooth mode', 'error');
         document.querySelectorAll('input[name="bt_mode"]').forEach(r => r.disabled = false);
-      });
+      })
+      .finally(() => { if (card) card.classList.remove('saving'); });
   }
 
   document.querySelectorAll('input[name="bt_mode"]').forEach(radio => {
