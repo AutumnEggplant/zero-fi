@@ -761,7 +761,7 @@ def load_config():
         "ssh_enabled": bool(AUTHORIZED_KEYS_FILE.exists() and AUTHORIZED_KEYS_FILE.read_text().strip()),
         "airplay_enabled": True,
         # "source" (connect out to a speaker) or "target" (be a speaker for a phone)
-        "bt_mode": "target",
+        "bt_mode": "off",
         "ntp_enabled": True,
         # c1/c4 are hand-copied into build-image.sh's baked myMPD home_list
         # icon (search for "bgcolor" there) for the pre-first-boot state,
@@ -1608,7 +1608,7 @@ def save_config_api():
     if "ntp_enabled" in data:
         apply_ntp_enabled(cfg.get("ntp_enabled", True))
     if "bt_mode" in data:
-        apply_bt_mode(cfg.get("bt_mode", "target"))
+        apply_bt_mode(cfg.get("bt_mode", "off"))
     if "palette" in data:
         apply_palette_to_mympd(cfg.get("palette", {}))
     return jsonify({"status": "ok"})
@@ -1743,7 +1743,7 @@ def config_restore():
         ("log export", lambda: apply_log_export(cfg.get("log_export", ""))),
         ("SSH", lambda: apply_ssh_enabled(cfg.get("ssh_enabled", False))),
         ("AirPlay", lambda: apply_airplay_enabled(cfg.get("airplay_enabled", True))),
-        ("Bluetooth mode", lambda: apply_bt_mode(cfg.get("bt_mode", "target"))),
+        ("Bluetooth mode", lambda: apply_bt_mode(cfg.get("bt_mode", "off"))),
     ]
     warnings = []
     for label, step in steps:
@@ -2072,7 +2072,7 @@ def list_outputs():
     _restore_dac_if_needed(sinks)
     return jsonify({
         "options": get_output_options(),
-        "bt_mode": cfg.get("bt_mode", "target"),
+        "bt_mode": cfg.get("bt_mode", "off"),
         "connected_bt_source": source,
         "current_sink": _pw_default_sink_name(pw_dump()),
     })
@@ -2237,7 +2237,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"WARNING: apply_timezone failed at boot: {e}", flush=True)
     try:
-        apply_bt_mode(cfg.get("bt_mode", "target"))
+        apply_bt_mode(cfg.get("bt_mode", "off"))
     except Exception as e:
         print(f"WARNING: apply_bt_mode failed at boot: {e}", flush=True)
     try:

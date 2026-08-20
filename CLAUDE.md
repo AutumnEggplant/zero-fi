@@ -182,3 +182,13 @@ The builder copies it in and enables SSH in the baked config automatically.
   for new hover states.
 - Don't add comments explaining *what* code does — only *why* when non-obvious.
 - This is a shared project, NEVER commit details of the local user or network to any tracked file.  If you are doing active development and need a place to store local context, use user-scope locations not project-scope for anything identifiable.
+
+## Releases
+
+Releases consist of three components, all managed via GitHub's "Releases" functionality:
+
+1. A Release tag (e.g. v1.0.0) of the SHA that maps to the code from which the release was built.
+2. A GitHub release page, with a change log since the last release.
+3. A binary version of the image built from the tagged SHA, compressed, with an accurate SHA256SUM of the file included in the release page for verification.
+
+Once released, a release can never be altered, only deleted if necessary for some reason.  This is not due to technical limitations, but is a policy of this repo.

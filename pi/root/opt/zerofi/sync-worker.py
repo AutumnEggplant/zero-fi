@@ -372,6 +372,16 @@ def process_sync(job):
         dst = local_dir / fname
         try:
             shutil.copy2(str(src), str(dst))
+            # Flush to the card and give it a moment before the next file.
+            # Suspected root cause of the 2026-08-20 sync stall: mmcblk write
+            # buffers filling faster than the card can drain them on a run of
+            # many small files, with no per-file backpressure to slow us down.
+            fd = os.open(str(dst), os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            time.sleep(3)
             log(f"sync: {rel_dir}/{fname}")
         except OSError as e:
             log(f"sync: copy failed {rel_dir}/{fname}: {e}")

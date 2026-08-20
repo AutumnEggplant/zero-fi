@@ -633,7 +633,7 @@ DROPIN
 # factory-fresh icon will look wrong for the few seconds before that runs.
 mkdir -p "$ROOT_MOUNT/var/lib/mympd/state"
 printf '%s\n' \
-    '{"type":"icon","name":"Zero-Fi","ligature":"code","bgcolor":"#5c2a0a","color":"#9ccce8","image":"","cmd":"openExternalLink","options":["https://github.com/AutumnEggplant/zero-fi","false"]}' \
+    '{"type":"icon","name":"Zero-Fi","ligature":"code","bgcolor":"#5c2a0a","color":"#9ccce8","image":"","cmd":"openExternalLink","options":["https://github.com/AutumnEggplant/zero-fi","true"]}' \
     > "$ROOT_MOUNT/var/lib/mympd/state/home_list"
 chroot "$ROOT_MOUNT" chown nobody:nogroup /var/lib/mympd/state/home_list
 
@@ -1072,6 +1072,16 @@ echo "  Size:  $FINAL_SIZE"
 echo ""
 echo "To flash to SD card:"
 echo "  sudo bash build/flash-sd.sh /dev/sdX"
+echo ""
+if [[ "$FINAL_ARTIFACT" == *.xz ]]; then
+    echo "Or, to test end user experience (raw write, skips config/music prefill and"
+    echo "partition pre-expansion — first boot handles all of that itself):"
+    echo "  xzcat $FINAL_ARTIFACT | sudo dd of=/dev/sdX bs=4M status=progress oflag=direct && sync"
+else
+    echo "Or, to test end user experience (raw write, skips config/music prefill and"
+    echo "partition pre-expansion — first boot handles all of that itself):"
+    echo "  sudo dd if=$FINAL_ARTIFACT of=/dev/sdX bs=4M status=progress oflag=direct && sync"
+fi
 echo ""
 echo "First boot:"
 echo "  1. Pi projects open AP 'Zero-Fi' — no setup wizard, it's usable immediately"
