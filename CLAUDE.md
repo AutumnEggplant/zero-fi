@@ -211,3 +211,12 @@ Releases consist of three components, all managed via GitHub's "Releases" functi
 3. A binary version of the image built from the tagged SHA, compressed, with an accurate SHA256SUM of the file included in the release page for verification.
 
 Once released, a release can never be altered, only deleted if necessary for some reason.  This is not due to technical limitations, but is a policy of this repo.
+
+## Rules for All Commits / Pushes
+
+These are independent of author and apply to every time you are going to commit or push any code on any branch, and not even explicit user approval is enough to override them: they are for the safety of both users and developers.
+
+* Never commit any personal information beyond the commit author.  This includes but is not limited to name, address, connection details for a local network, addresses of other machines on the network, software used on the network such as log aggregators or network shares, hardware addresses, info about a particular music collection, or usage data / telemetry of any kind.  If such data must be included for some intractable reason (for example a bug that only shows up for collections over X size or something similar), get explicit permission and anonymize the data fully.
+* Never commit executable binaries of any kind.  It is a malware vector and this is a source only repository.
+* Never commit any keys of any kind, private or public.  The former is a security breach, the latter is a vector for backdoors (intention or otherwise).
+* Always do a back-check of this rule before every commit.  A dev can make mistakes, too, and your memory of code state may not be up to date.
