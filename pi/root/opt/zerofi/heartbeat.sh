@@ -241,11 +241,16 @@ fi
 # that should be running and stops services that should not be.
 ZEROFI_CONFIG=/mnt/music/zerofi.json
 if [[ -f "$ZEROFI_CONFIG" ]]; then
+    # Goes through zerofi_config.py (the same reader Flask/sync-discover/
+    # sync-worker use) rather than a bare json.load — one schema, one place
+    # that has to tolerate a malformed or old-format file.
     read -r _AP_EN _WIFI_EN _SSH_EN _AIRPLAY_EN _NTP_EN < <(
         python3 -c "
-import json, sys
+import sys
+sys.path.insert(0, '/opt/zerofi')
+from zerofi_config import load_config
 try:
-    c = json.load(open('$ZEROFI_CONFIG'))
+    c = load_config()
     print(
         str(c.get('ap_enabled', True)).lower(),
         str(c.get('wifi_client_enabled', False)).lower(),

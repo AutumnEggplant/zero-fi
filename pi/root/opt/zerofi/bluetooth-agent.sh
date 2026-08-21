@@ -40,9 +40,16 @@ exec 9<>"$FIFO"
 cleanup() { rm -f "$FIFO"; }
 trap cleanup EXIT
 
-# grep+tr not python3 — spawning a full interpreter (~tens of ms) inside the
-# per-event loop creates a race where `trust <mac>` can still be in-flight
-# when the immediately-following AuthorizeService prompt arrives
+# grep+tr not python3/zerofi_config.py — spawning a full interpreter
+# (~tens of ms) inside the per-event loop creates a race where `trust <mac>`
+# can still be in-flight when the immediately-following AuthorizeService
+# prompt arrives. This is the one deliberate exception to "everything reads
+# config through zerofi_config.py": it's safe only because zerofi_config.py
+# is also the *only* writer (save_config() there always produces the flat
+# canonical shape), so a well-formed on-disk file never has more than one
+# "bt_mode" key for this to ambiguously match regardless of nesting depth. A
+# hand-edited or otherwise malformed file could still fool it — acceptable
+# here given the timing constraint, not acceptable anywhere config is written.
 current_bt_mode() {
     local mode
     mode=$(grep -o '"bt_mode"[[:space:]]*:[[:space:]]*"[a-z]*"' "$CONFIG_FILE" 2>/dev/null | grep -o '"[a-z]*"$' | tr -d '"')

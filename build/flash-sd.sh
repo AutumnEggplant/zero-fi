@@ -176,8 +176,18 @@ anything else mpd can play.
 README
 
         if [[ -f "$CONFIG_PREFILL" ]]; then
-            cp "$CONFIG_PREFILL" "$MUSIC_MNT/zerofi.json"
-            echo "  Config pre-populated from $(basename "$CONFIG_PREFILL")."
+            # Normalize through zerofi_config.py (the same module the device
+            # itself reads/writes zerofi.json with) rather than a blind cp —
+            # a /api/config/backup bundle dropped in as this file works too,
+            # since its real settings just get unwrapped instead of silently
+            # producing a device that boots on defaults (2026-08-21 incident).
+            if python3 "$REPO_DIR/pi/root/opt/zerofi/zerofi_config.py" normalize-file "$CONFIG_PREFILL" \
+                    > "$MUSIC_MNT/zerofi.json"; then
+                echo "  Config pre-populated from $(basename "$CONFIG_PREFILL")."
+            else
+                echo "  ERROR: $CONFIG_PREFILL is not valid JSON — config NOT pre-populated."
+                rm -f "$MUSIC_MNT/zerofi.json"
+            fi
         fi
 
         if [[ -n "$MUSIC_SRC" ]]; then

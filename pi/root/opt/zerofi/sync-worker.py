@@ -25,6 +25,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import zerofi_config
+
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
 MUSIC_DIR      = Path("/mnt/music")
@@ -33,7 +35,6 @@ SMB_CREDENTIALS = Path("/run/zerofi/smb-credentials")
 LOCK_FILE      = Path("/run/zerofi/sync.lock")
 QUEUE_DIR      = Path("/run/zerofi/sync-queue")
 MPC_UPDATE_FLAG = Path("/run/zerofi/mpc-update-desired")
-CONFIG_FILE    = MUSIC_DIR / "zerofi.json"
 
 QUALIFY_DIR = QUEUE_DIR / "qualify"
 COMPARE_DIR = QUEUE_DIR / "compare"
@@ -68,7 +69,7 @@ def log(msg):
 
 def load_config():
     try:
-        return json.loads(CONFIG_FILE.read_text())
+        return zerofi_config.load_config()
     except Exception as e:
         log(f"config read failed: {e}")
         return {}

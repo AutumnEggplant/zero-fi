@@ -22,12 +22,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import zerofi_config
+
 MUSIC_DIR       = Path("/mnt/music")
 SMB_MOUNT       = Path("/mnt/smb-source")
 SMB_CREDENTIALS = Path("/run/zerofi/smb-credentials")
 QUEUE_DIR       = Path("/run/zerofi/sync-queue")
 QUALIFY_DIR     = QUEUE_DIR / "qualify"
-CONFIG_FILE     = MUSIC_DIR / "zerofi.json"
 
 AUDIO_EXTENSIONS = frozenset({
     ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav", ".aac", ".wv", ".ape"
@@ -113,7 +114,7 @@ def unmount_smb():
 def run_test():
     """--test: prove the source is mountable, then unmount without walking."""
     try:
-        config = json.loads(CONFIG_FILE.read_text())
+        config = zerofi_config.load_config()
     except Exception as e:
         log(f"config read failed: {e}")
         sys.exit(1)
@@ -132,7 +133,7 @@ def run_test():
 
 def main():
     try:
-        config = json.loads(CONFIG_FILE.read_text())
+        config = zerofi_config.load_config()
     except Exception as e:
         log(f"config read failed: {e}")
         sys.exit(1)

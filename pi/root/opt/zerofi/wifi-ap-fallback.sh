@@ -14,7 +14,6 @@ set -uo pipefail
 
 IFACE="${1:-wlan0}"
 EVENT="${2:-}"
-CONFIG_FILE=/mnt/music/zerofi.json
 
 [[ "$EVENT" != "DISCONNECTED" ]] && exit 0
 
@@ -34,13 +33,7 @@ if ip -4 -o addr show "$IFACE" 2>/dev/null | \
     exit 0  # reconnected during grace period
 fi
 
-wifi_client_enabled=$(python3 -c "
-import json, sys
-try:
-    print('true' if json.load(open('$CONFIG_FILE')).get('wifi_client_enabled') else 'false')
-except Exception:
-    print('false')
-" 2>/dev/null)
+wifi_client_enabled=$(python3 /opt/zerofi/zerofi_config.py get wifi_client_enabled 2>/dev/null)
 [[ "$wifi_client_enabled" != "true" ]] && exit 0
 
 systemctl is-active --quiet zerofi-ap.service && exit 0

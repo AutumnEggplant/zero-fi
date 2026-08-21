@@ -20,6 +20,10 @@ static/             CSS, SVGs, fonts
 pi/boot/            dietpi.txt — DietPi first-run config baked into image
 pi/root/            files overlaid onto the rootfs verbatim at build time
   opt/zerofi/
+    zerofi_config.py  the ONLY reader/writer of zerofi.json — every other
+                      component (Flask, the two scripts below, three of the
+                      bash daemons, flash-sd.sh) goes through it rather than
+                      re-parsing the file. See its module docstring.
     sync-worker.py    processes bounded 30-min cycles of the job queue
     sync-discover.py  walks SMB source, enqueues qualify jobs; runs daily + on demand.
                       also the SMB reachability check (--test, from settings UI)
@@ -52,6 +56,10 @@ docs/index.html     single-page project site (also served at /help)
   partition (3rd SD partition, `/dev/mmcblk0p3`). Its absence means first-boot
   (factory-reset-by-deleting). User-editable by mounting the partition on any
   computer. Writes are atomic (tmp + rename) — exFAT has no journal.
+  `pi/root/opt/zerofi/zerofi_config.py` is the single reader/writer schema
+  for this file — do not add another `json.loads(CONFIG_FILE...)` anywhere,
+  Python or shell; import/call it instead (see repo layout above and the
+  module's own docstring for the one deliberate exception).
 - **myMPD**: runs on port 8080; the Flask toolbar (port 80) embeds it in an
   iframe. Flask calls the myMPD JSON API at `127.0.0.1:8080` internally for
   palette management. Palette CSS is written to
@@ -185,7 +193,10 @@ Systemd units are heredocs in `build/build-image.sh`, not files in `pi/root/`.
 `flash-sd.sh` — the flash script copies it to the music partition so the Pi
 boots already configured. The image itself contains no config; its absence is
 what triggers first-boot setup. Schema: see `load_config()` defaults in
-`flask_app/app.py`.
+`flask_app/app.py`. A `GET /api/config/backup` download also works directly
+as this file — `load_config()` unwraps its `zerofi_config` key transparently
+— but its `known_bt_devices`/`authorized_keys` fields are ignored at this
+path (only `/api/config/restore` applies those).
 
 **SSH keys**: place an `authorized_keys` file at
 `pi/root/root/.ssh/authorized_keys` (gitignored path) before building.
@@ -201,6 +212,14 @@ The builder copies it in and enables SSH in the baked config automatically.
   for new hover states.
 - Don't add comments explaining *what* code does — only *why* when non-obvious.
 - This is a shared project, NEVER commit details of the local user or network to any tracked file.  If you are doing active development and need a place to store local context, use user-scope locations not project-scope for anything identifiable.
+
+## Roadmap
+
+**Accepted, not yet scheduled:**
+- Unit testing. Prompted by the 2026-08-21 config-schema incident (six
+  independent parsers of `zerofi.json`, no test would have caught the
+  divergence before a real flash exposed it) — not being done as part of
+  that fix, but accepted as something this project needs going forward.
 
 ## Releases
 

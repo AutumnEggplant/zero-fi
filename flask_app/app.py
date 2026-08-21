@@ -35,9 +35,21 @@ if not _DEV and CONFIG_DIR == _DEFAULT_CONFIG_DIR and not os.path.ismount(MUSIC_
 
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
-CONFIG_FILE = CONFIG_DIR / "zerofi.json"
+# zerofi_config.py is the single shared reader/writer for zerofi.json — every
+# other component (sync-discover.py, sync-worker.py, heartbeat.sh,
+# wifi-ap-fallback.sh, bluetooth-agent.sh, flash-sd.sh) goes through the same
+# module rather than each re-parsing the file its own way. It lives at
+# /opt/zerofi/zerofi_config.py in the deployed layout (a sibling of this
+# file's parent), or pi/root/opt/zerofi/ in a repo checkout.
+_shared_dir = Path(__file__).resolve().parent.parent
+if not (_shared_dir / "zerofi_config.py").exists():
+    _shared_dir = _shared_dir / "pi" / "root" / "opt" / "zerofi"
+sys.path.insert(0, str(_shared_dir))
+import zerofi_config  # noqa: E402
+
+CONFIG_FILE = zerofi_config.CONFIG_FILE
 KNOWN_DEVICES_FILE = CONFIG_DIR / "known_bt_devices.json"
-AUTHORIZED_KEYS_FILE = Path("/root/.ssh/authorized_keys")
+AUTHORIZED_KEYS_FILE = zerofi_config.AUTHORIZED_KEYS_FILE
 
 
 def is_configured():
@@ -726,63 +738,11 @@ def mpd_update_and_wait(timeout=180):
         _mpd_update_lock.release()
 
 
-def _default_instance_name():
-    """A plain 'Zero-Fi' risks colliding with another device on the same
-    network — both the WiFi SSID and the AirPlay name need to be unique to
-    avoid confusing clients about which one they're talking to. Suffix with
-    a few bytes of wlan0's MAC so the out-of-the-box default works."""
-    try:
-        mac = Path("/sys/class/net/wlan0/address").read_text().strip()
-        suffix = mac.replace(":", "")[-4:].upper()
-        return f"Zero-Fi-{suffix}"
-    except Exception:
-        return "Zero-Fi"
-
-
-def load_config():
-    defaults = {
-        "instance_name": _default_instance_name(),
-        "ap_password": "",
-        "wifi_client_ssid": "",
-        "wifi_client_password": "",
-        "wifi_client_enabled": False,
-        "paired_bt_mac": "",
-        "paired_bt_name": "",
-        "sync_enabled": False,
-        "smb_source": "",
-        "smb_username": "",
-        "smb_password": "",
-        "compare_enabled": False,
-        "timezone": "America/New_York",
-        "log_export": "",    # e.g. "192.168.1.50:514" — remote syslog (UDP), empty disables
-        "ap_enabled": True,
-        # off unless a key was pre-injected at build time — no SSH surface for
-        # builders who never intended to use it
-        "ssh_enabled": bool(AUTHORIZED_KEYS_FILE.exists() and AUTHORIZED_KEYS_FILE.read_text().strip()),
-        "airplay_enabled": True,
-        # "source" (connect out to a speaker) or "target" (be a speaker for a phone)
-        "bt_mode": "off",
-        "ntp_enabled": True,
-        # c1/c4 are hand-copied into build-image.sh's baked myMPD home_list
-        # icon (search for "bgcolor" there) for the pre-first-boot state,
-        # before _push_mympd_webui_settings() ever runs — keep them in sync.
-        "palette": {
-            "bg": "#f4e8cc",
-            "c1": "#5c2a0a",
-            "c2": "#e8601a",
-            "c3": "#f0c218",
-            "c4": "#9ccce8",
-        },
-    }
-    if CONFIG_FILE.exists():
-        data = json.loads(CONFIG_FILE.read_text())
-        if "wifi_client_enabled" not in data and data.get("wifi_client_ssid"):
-            # upgrading a box that already joined a network — don't silently disconnect it
-            data["wifi_client_enabled"] = True
-        if "instance_name" not in data and data.get("ap_ssid"):
-            data["instance_name"] = data["ap_ssid"]
-        defaults.update(data)
-    return defaults
+# load_config/save_config are zerofi_config's — every reader/writer of
+# zerofi.json (this app, sync-discover.py, sync-worker.py, the bash daemons,
+# flash-sd.sh) shares that one implementation. See its module docstring.
+load_config = zerofi_config.load_config
+save_config = zerofi_config.save_config
 
 
 def _write_json_atomic(path, data):
@@ -796,10 +756,6 @@ def _write_json_atomic(path, data):
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, path)
-
-
-def save_config(cfg):
-    _write_json_atomic(CONFIG_FILE, cfg)
 
 
 def load_known_devices():
