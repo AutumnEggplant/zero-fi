@@ -735,10 +735,11 @@ SERVICE
 
 cat > "$ROOT_MOUNT/etc/systemd/system/zerofi-sync-discover.timer" << 'TIMER'
 [Unit]
-Description=Zero-Fi sync discovery — daily
+Description=Zero-Fi sync discovery — daily, and shortly after boot
 
 [Timer]
 OnCalendar=daily
+OnBootSec=3min
 Persistent=true
 
 [Install]
@@ -865,6 +866,14 @@ chroot "$ROOT_MOUNT" systemctl disable hostapd dnsmasq 2>/dev/null || true
 # dhcpcd manages every interface by default — wlan0_ap gets a static 192.168.4.1
 # from zerofi-ap.service; no reason to let dhcpcd try an always-futile lease there
 echo "denyinterfaces wlan0_ap" >> "$ROOT_MOUNT/etc/dhcpcd.conf"
+
+# Home routers that run a DHCPv6 server with no addresses configured (or none
+# at all, relying on RA-only SLAAC) make dhcpcd retry DHCPv6 indefinitely,
+# logging "DHCPv6 REPLY: No Addresses Available" every cycle even once wlan0
+# already has a healthy v4 address and routes. `nodhcp6` stops dhcpcd from
+# requesting a DHCPv6 address/prefix at all — SLAAC (`ipv6rs`, on by default)
+# is untouched, so IPv6 itself still works if the network offers it that way.
+echo "nodhcp6" >> "$ROOT_MOUNT/etc/dhcpcd.conf"
 
 # dietpi-ramlog/dietpi-preboot/dietpi-postboot all reference /boot/dietpi/ which
 # doesn't exist in this image — show as "failed" on every boot otherwise.

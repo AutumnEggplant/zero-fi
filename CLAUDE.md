@@ -110,17 +110,36 @@ The AP's own SSID is `Zero-Fi-XXXX` unless a pre-seeded config set a custom `ins
 
 ## Sync pipeline
 
+The Pi Zero W's `brcmfmac` WiFi chip is fundamentally unstable under sustained
+SDIO load (syncing over the network to a slow SD card is exactly that load) —
+it can wedge for minutes with no software fix. The heartbeat's D-state watchdog
+detects this and reboots to clear it. The whole sync pipeline is designed
+around that reboot being routine and fully recoverable, not a failure: the
+goal is a box that's always there and playable when you go to use it, that
+quietly finishes syncing on its own time regardless of how many times the
+radio needs to be kicked along the way.
+
 ```
-zerofi-sync-discover (daily timer + on-demand)
+zerofi-sync-discover (daily timer + OnBootSec=3min + on-demand)
   → mounts SMB, walks dirs, writes qualify jobs to /run/zerofi/sync-queue/qualify/
   → unmounts, starts sync-worker
 
 zerofi-sync-worker (one-shot, 30-min cycle limit)
-  → qualify → compare (ffprobe sig diff) → sync (shutil.copy2) → prune
+  → qualify → compare (ffprobe sig diff) → sync (copy to .part, fsync, rename) → prune
   → heartbeat re-starts worker every 5 min while queue has jobs
   → stops if: music playing, WiFi lost, SMB unreachable, time limit, queue empty
 
-Queue: /run/zerofi/sync-queue/{qualify,compare,sync,prune}/ (tmpfs — cleared on reboot)
+Queue: /run/zerofi/sync-queue/{qualify,compare,sync,prune}/ (tmpfs — cleared on
+reboot, deliberately not persisted to the SD card). Recovery is by
+re-derivation, not by remembering: the boot-time discovery run re-walks the
+source and re-qualifies everything, so a sync cut off by a watchdog reboot
+just resumes a few minutes later. Per-file copies land at a `.part` sibling
+and only get renamed to their real name once fully written and fsynced, so a
+reboot mid-file leaves either a finished track or nothing at all — never a
+truncated file that "missing locally" compare logic could mistake for done.
+Any orphaned `.part` left by a reboot between copy and rename is swept at the
+start of the next cycle.
+
 No separate status file — the queue itself (job counts per phase) is the
 only source of truth for sync progress; GET /api/library/status just counts
 files in each queue dir.

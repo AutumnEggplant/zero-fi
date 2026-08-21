@@ -1676,10 +1676,13 @@ def api_time():
     """Powers the toolbar clock — shows the Pi's own time, not the viewer's,
     so a wrong Pi timezone surfaces immediately."""
     now = datetime.now()
+    # /etc/timezone is the same value timedatectl reports, read directly —
+    # this endpoint is polled continuously by the toolbar clock, and shelling
+    # out to timedatectl each time D-Bus-activates systemd-timedated just to
+    # answer a question that never changes between polls.
     try:
-        tz = subprocess.run(["timedatectl", "show", "-p", "Timezone", "--value"],
-                             capture_output=True, text=True, timeout=5).stdout.strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        tz = Path("/etc/timezone").read_text().strip() or None
+    except OSError:
         tz = None
     return jsonify({
         "time": now.strftime("%H:%M"),

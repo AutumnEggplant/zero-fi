@@ -205,10 +205,16 @@ for UNIT in "${CRASHY_UNITS[@]}"; do
     fi
 done
 
-# pipewire/wireplumber are user units — -M pipewire@ queries that user's
-# systemd instance from root
+# pipewire/wireplumber are user units. `-M pipewire@` reaches that user's
+# systemd instance from root, but it does so via a fresh systemd-stdio-bridge
+# + PAM login session every single call (two per heartbeat, every 5 min) —
+# pure churn since the instance is already running persistently (linger).
+# Pointing XDG_RUNTIME_DIR straight at its socket reaches the same manager
+# with no session machinery, same trick app.py already uses for pw-dump/
+# pw-metadata via _PW_ENV.
+PIPEWIRE_UID=$(id -u pipewire 2>/dev/null)
 for UNIT in pipewire wireplumber; do
-    NRESTARTS=$(systemctl --user -M pipewire@ show "$UNIT.service" -p NRestarts --value 2>/dev/null)
+    NRESTARTS=$(XDG_RUNTIME_DIR="/run/user/$PIPEWIRE_UID" systemctl --user show "$UNIT.service" -p NRestarts --value 2>/dev/null)
     if [[ -n "$NRESTARTS" ]] && (( NRESTARTS > 20 )); then
         echo "  WARNING: $UNIT.service (pipewire user session) has restarted $NRESTARTS times — likely crash-looping"
     fi

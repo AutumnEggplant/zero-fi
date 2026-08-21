@@ -370,21 +370,30 @@ def process_sync(job):
     for fname in fnames:
         src = SMB_MOUNT / rel_dir / fname
         dst = local_dir / fname
+        # Copy to a .part sibling and rename into place only once it's
+        # complete and fsynced. A crash mid-copy (the box can reboot itself
+        # under sustained WiFi/SD contention — see hang-forensics) then
+        # leaves either a finished file at dst or nothing at all, never a
+        # truncated one — "missing locally" in process_compare is the only
+        # signal that needs to stay true, instead of also detecting partial
+        # writes after the fact.
+        tmp = dst.with_name(dst.name + ".part")
         try:
-            shutil.copy2(str(src), str(dst))
-            # Flush to the card and give it a moment before the next file.
-            # Suspected root cause of the 2026-08-20 sync stall: mmcblk write
-            # buffers filling faster than the card can drain them on a run of
-            # many small files, with no per-file backpressure to slow us down.
-            fd = os.open(str(dst), os.O_RDONLY)
+            shutil.copy2(str(src), str(tmp))
+            fd = os.open(str(tmp), os.O_RDONLY)
             try:
                 os.fsync(fd)
             finally:
                 os.close(fd)
+            os.rename(str(tmp), str(dst))
+            # Give the card a moment before the next file — mmcblk write
+            # buffers can fill faster than the card drains them on a run of
+            # many small files, with no per-file backpressure otherwise.
             time.sleep(3)
             log(f"sync: {rel_dir}/{fname}")
         except OSError as e:
             log(f"sync: copy failed {rel_dir}/{fname}: {e}")
+            tmp.unlink(missing_ok=True)
 
     if not (local_dir / "cover.jpg").exists():
         subprocess.call(
@@ -509,6 +518,12 @@ def main():
         if not has_lan():
             log("gated: no home LAN — exiting")
             return
+
+        # Orphaned .part files only happen if a prior cycle died mid-copy —
+        # the lock above guarantees no other cycle is writing one right now.
+        for stale in MUSIC_DIR.rglob("*.part"):
+            stale.unlink(missing_ok=True)
+            log(f"cleanup: removed orphaned partial file {stale.relative_to(MUSIC_DIR)}")
 
         _, summary = queue_counts()
         log(f"starting cycle: {summary}")

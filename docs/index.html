@@ -343,6 +343,14 @@
   <!-- ── Library sync ───────────────────────────────────────── -->
   <section class="section" id="library">
     <h2 class="section-label">Library sync</h2>
+    <p>The Pi Zero W's WiFi chip is fundamentally unstable under sustained load — its
+       SDIO bus can wedge for minutes at a time while syncing over the network to a
+       slow SD card, and no amount of software tuning makes that stop happening. So
+       Zero-Fi doesn't try to prevent it: a watchdog detects the radio going walkabout
+       and reboots the device to clear it, and the sync pipeline is built to treat that
+       as a routine, fully-recoverable event rather than a failure. The goal isn't a
+       sync that never gets interrupted — it's a box that's always there and playable
+       when you go to use it, and quietly finishes the job on its own time.</p>
     <div class="card">
       <h3>Setup</h3>
       <p>Go to Settings → Library → Sync. Fill in:</p>
@@ -359,9 +367,10 @@
          in that card while running. Be especially aware that no sync jobs process while
          music is playing.</p>
       <p>When sync is enabled and a source is configured, Zero-Fi also runs a sync
-         automatically once a day (around midnight). If the device was off at midnight, it
-         catches up on the next boot. The automatic run requires a WiFi client connection to
-         the home network — it won't attempt to reach the source over the AP-only interface.</p>
+         automatically once a day (around midnight), and again a few minutes after every
+         boot — including a watchdog-triggered reboot mid-sync, which is exactly the case
+         this is for. The automatic run requires a WiFi client connection to the home
+         network — it won't attempt to reach the source over the AP-only interface.</p>
       <p>mpd rescans after sync completes — new tracks are available in the library shortly
          after.</p>
       <p>Do <strong>NOT</strong> use a NAS account you care about btw!  It's going to be a little
@@ -400,9 +409,17 @@
             deleted from the source and clean up any directories that become empty,
             but this isn't currently exposed as a setting, so it doesn't run today.</li>
       </ol>
-      <p>The queue lives in <code>/run</code> (a tmpfs) and evaporates on reboot —
-         a sync interrupted by a power cycle or reboot just needs to be re-triggered.
-         The progress display in the Sync card shows live per-phase counts.</p>
+      <p>The queue lives in <code>/run</code> (a tmpfs) and evaporates on reboot, so it's
+         never persisted to the SD card — that's deliberate, since the sync worker already
+         has to write to the card on every cycle and a reboot is an expected outcome of a
+         long sync, not an edge case. Recovery instead comes from re-deriving the queue:
+         the boot-time discovery run above walks the source again and re-qualifies
+         everything, so a sync cut off by a reboot just resumes a few minutes later without
+         needing to remember where it left off. Each file is copied to a temporary
+         <code>.part</code> sibling and only renamed into its real name once the copy is
+         complete and flushed to the card — so a reboot mid-file leaves either a finished
+         track or nothing at all at that path, never a truncated one that could be mistaken
+         for done. The progress display in the Sync card shows live per-phase counts.</p>
       <p>Jobs deduplicate on dequeue: if the same directory queued twice (e.g. you
          hit Sync Now again mid-run), the duplicate is silently discarded when the first
          copy is picked up.</p>
