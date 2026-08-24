@@ -351,6 +351,14 @@
        as a routine, fully-recoverable event rather than a failure. The goal isn't a
        sync that never gets interrupted — it's a box that's always there and playable
        when you go to use it, and quietly finishes the job on its own time.</p>
+    <p>That design makes it <strong>safe</strong> to point sync at a large backlog — it'll
+       chew through any amount of data without corrupting anything or needing supervision —
+       but it's not <strong>fast</strong>. A full library is hours to days of wall-clock
+       time on a Pi Zero W's single weak core and flaky radio, not a one-sitting transfer.
+       Seed the bulk of your collection some other way — pull the card and copy it
+       directly onto the music partition with a reader (see "Running a sync" below) —
+       and let sync do what it's actually good at: keeping the device caught up as you
+       add a handful of new albums a week.</p>
     <div class="card">
       <h3>Setup</h3>
       <p>Go to Settings → Library → Sync. Fill in:</p>
@@ -371,6 +379,13 @@
          boot — including a watchdog-triggered reboot mid-sync, which is exactly the case
          this is for. The automatic run requires a WiFi client connection to the home
          network — it won't attempt to reach the source over the AP-only interface.</p>
+      <p>If you hit Sync Now against a whole music library instead of a small backlog, it'll
+         work, but each 30-minute worker cycle only gets through a batch before stopping and
+         waiting for the next trigger — expect it to take several days of accumulated cycles
+         to catch up on a large collection, not one sitting. That's fine to leave running; it
+         won't get worse or corrupt anything the longer it takes. It's just not what the
+         automatic daily sync is meant for day to day — think a couple of new albums a week,
+         not the initial seed.</p>
       <p>mpd rescans after sync completes — new tracks are available in the library shortly
          after.</p>
       <p>Do <strong>NOT</strong> use a NAS account you care about btw!  It's going to be a little
