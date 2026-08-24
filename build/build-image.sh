@@ -6,7 +6,16 @@
 # First boot only expands the music partition — no package downloads, no pip installs.
 #
 # Usage:
-#   sudo bash build/build-image.sh
+#   sudo bash build/build-image.sh [--release-image]
+#
+#   --release-image   Deletes any existing zerofi-*.img/.img.xz in the repo
+#                      root first, never bakes in a local authorized_keys
+#                      (even if pi/root/root/.ssh/authorized_keys exists),
+#                      always compresses, and writes a .sha256 file next to
+#                      the archive for release notes. Config (zerofi.json)
+#                      is never baked at build time regardless — that only
+#                      happens at flash time via flash-sd.sh — so a release
+#                      image is always fully unconfigured out of the box.
 #
 # Requirements: curl, xz, parted, losetup, qemu-arm-static, binfmt_misc, python3
 # Must be root for loop device + chroot.
@@ -16,6 +25,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORK_DIR="$(mktemp -d)"
+
+RELEASE_IMAGE=0
+for arg in "$@"; do
+    case "$arg" in
+        --release-image) RELEASE_IMAGE=1 ;;
+        *) echo "ERROR: unknown argument: $arg" >&2; exit 1 ;;
+    esac
+done
 
 # pre-declare so cleanup() doesn't hit "unbound variable" under set -u on an
 # early failure or a cache-hit run that skips the DietPi root mount
@@ -64,6 +81,11 @@ preflight_cleanup
 VERSION="0.1.0"
 OUTPUT_IMAGE="$REPO_DIR/zerofi-${VERSION}.img"
 OUTPUT_ARCHIVE="${OUTPUT_IMAGE}.xz"
+
+if [[ "$RELEASE_IMAGE" -eq 1 ]]; then
+    echo "Release mode: removing any existing built images..."
+    rm -f "$REPO_DIR"/zerofi-*.img "$REPO_DIR"/zerofi-*.img.xz "$REPO_DIR"/zerofi-*.img.xz.sha256
+fi
 
 CACHE_DIR="$REPO_DIR/.cache"
 CACHE_ROOTFS="$CACHE_DIR/rootfs.tar"  # uncompressed — local cache, not for transfer
@@ -463,7 +485,11 @@ find "$ROOT_MOUNT/opt/zerofi" -maxdepth 1 -type f -exec sh -c 'head -c2 "$1" | g
 rm -f "$ROOT_MOUNT/etc/bashrc.d/dietpi.bash"
 cp "$REPO_DIR/pi/root/etc/motd" "$ROOT_MOUNT/etc/motd"
 
-if [[ -f "$REPO_DIR/pi/root/root/.ssh/authorized_keys" ]]; then
+if [[ "$RELEASE_IMAGE" -eq 1 ]]; then
+    if [[ -f "$REPO_DIR/pi/root/root/.ssh/authorized_keys" ]]; then
+        echo "  Release mode: NOT baking in local authorized_keys."
+    fi
+elif [[ -f "$REPO_DIR/pi/root/root/.ssh/authorized_keys" ]]; then
     mkdir -p "$ROOT_MOUNT/root/.ssh"
     cp "$REPO_DIR/pi/root/root/.ssh/authorized_keys" "$ROOT_MOUNT/root/.ssh/"
     chmod 700 "$ROOT_MOUNT/root/.ssh"
@@ -1064,7 +1090,7 @@ umount "$MUSIC_MOUNT" 2>/dev/null || true
 
 losetup -d "$LOOP_DEV" 2>/dev/null || true
 
-if [[ -n "${COMPRESS:-}" ]]; then
+if [[ "$RELEASE_IMAGE" -eq 1 || -n "${COMPRESS:-}" ]]; then
     echo "  Compressing image..."
     xz -T0 -f "$OUTPUT_IMAGE"
     FINAL_ARTIFACT="$OUTPUT_ARCHIVE"
@@ -1074,10 +1100,20 @@ else
     FINAL_SIZE=$(ls -lh "$FINAL_ARTIFACT" | awk '{print $5}')
 fi
 
+if [[ "$RELEASE_IMAGE" -eq 1 ]]; then
+    echo "  Computing SHA256SUM..."
+    SHA_FILE="${FINAL_ARTIFACT}.sha256"
+    ( cd "$REPO_DIR" && sha256sum "$(basename "$FINAL_ARTIFACT")" > "$SHA_FILE" )
+fi
+
 echo ""
 echo "=== Build complete! ==="
 echo "  Image: $FINAL_ARTIFACT"
 echo "  Size:  $FINAL_SIZE"
+if [[ "$RELEASE_IMAGE" -eq 1 ]]; then
+    echo "  SHA256SUM (for release notes):"
+    echo "    $(cat "$SHA_FILE")"
+fi
 echo ""
 echo "To flash to SD card:"
 echo "  sudo bash build/flash-sd.sh /dev/sdX"
