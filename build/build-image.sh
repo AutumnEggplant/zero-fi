@@ -331,8 +331,10 @@ for attempt in 1 2 3; do
     fi
 done
 
-# drop local-file rules — we only want rsyslog as a remote-forward relay
+# /var/log is a 16M tmpfs by design (avoids SD wear).  Syslog is forward-only, not written to a file.
 rm -f /etc/rsyslog.d/50-default.conf
+sed -i -E '/^[^#].*\/var\/log\//s/^/#/' /etc/rsyslog.conf
+rm -f /etc/logrotate.d/rsyslog
 
 # package-shipped rsyslog.service has no network ordering — it starts before wlan0
 # has an address, causing "Temporary failure in name resolution" on every boot
